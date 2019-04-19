@@ -1,0 +1,273 @@
+
+
+==================多表查询===============
+
+一、多表查询
+定义：
+也称为简介查询；
+将两个或两个以上的表按某个条件连接起来，从中查询需要的数据。
+
+1.1  复制表
+作用：备份表，快速建表
+
+格式：create   table   库名.表名  select * from  库名.表名
+#第一个‘库名.表名’为新表  ，第二个‘库名.表名’  为参照表
+
+备份表：
+create database db;
+use db;
+create table user2 select * from userdb.user;   //备份表
+
+select count(*) from userdb.user;    //验证结果    二者结果相同
+select count(*) from user2;		//验证结果 
+
+快速建表：原表的键值属性不会被继承，需要自己再添加。
+
+create table user3 select * from userdb.user where 1>2;     //where后的条件只要为假就行
+
+desc user3;			//二者表结构相同，但是没有userdb.user的键值属性等，需要重新设置
+desc userdb.user;
+
+1.2 多表查询
+1、格式1： select  字段名列表  from 表a  表b …… [where   条件]；
+							结果：显示与条件匹配的行
+				select  字段名列表  from   表a  表b；
+	以上格式查询的结果叫笛卡尔集
+									结果：表记录行数的积
+
+create  table t3 select name,uid,shell,homedir from userdb.user  limit 5;		//创建表t3
+create  table t4 select name,uid  from userdb.user  limit 3;		//创建表t4
+select * from t3;		//查询表t3的值
+select * from t4;		//查询表t4的值
+select * from t3,t4;	//同时查询表t3，t4的值
+select * from t3,t4 where t3.uid=t4.uid;		//查询表t3，t4里uid相等的值
+select t4.name,t4.uid,t3.shell,t3.homedir from t3,t4 where t3.uid=t4.uid;		//查询表t3的shell  homedir，t4的name uid且uid相等
+
+2、格式2：where 子查询    嵌套查询
+把查询的结果做为where的条件，再次查询
+
+select 字段名列表  from 表名  where 条件 （select 字段名列表  from 表名  where 条件）;
+
+例：输出年龄小与平均年龄的学生名字和年龄
+update user set age=32 where id>20;
+update user set age=34 where id>30;
+select name,age from userdb.user where age < (select avg(age) from userdb.user);
+
+select name,uid from userdb.user where name in (select name from db.t3);
+
+select name,uid from userdb.user where uid in (select uid from db.t3 where uid>1);
+
+3、格式3：左连接查询
+左连接查询： 查询条件成立时，以左边的表为主显示查询结果
+用法：
+select 字段名列表  from  表a   left   join 表b  on  条件表达式;
+
+
+4、格式4：右连接查询
+右连接查询： 查询条件成立时，以右边的表为主显示查询结果
+用法：
+select 字段名列表  from  表a   right   join 表b  on  条件表达式;
+
+create table t6 select name,uid,passwd,shell from userdb.user limit 3;   //建表t6
+create table t7 select name,uid,passwd,shell from userdb.user limit 6;  //建表t7
+
+select * from t6 right join t7 on t6.uid = t7.uid;  //查找t6和t7不相同的内容
+select * from t6 left join t7 on t6.uid = t7.uid;   //查找t6和t7相同的内容
+
+
+==============mysql管理工具===============
+
+二、mysql管理工具
+2.1  访问数据库的方式
+1、命令连接（windows  linux 的命令连接方式相同）
+	mysql -u 用户名  -p  密码
+2、安转软件，访问软件，连接数据库服务器
+	软件提供图形界面（图形  /  web页面）
+
+2.1 常见管理工具
+类型							界面			操作系统		说明
+mysql  							命令行  	 跨平台  	Mysql 官方bundle 包自带
+MySQL-Workbench		 图形  	 跨平台		  MySQL官方提供
+MySQL-Front   				图形  	 Windows  	开源，轻量级客户端软件
+phpMyAdmin  				浏览器 	 跨平台  		开源，需LAMP平台
+Navicat  						 图形   	Windows 		专业，功能 强大，商业版
+
+
+2、部署  phpMyAdmin   图形软件
+a、安装 httpd mysql php-mysql php
+yum -y install  httpd mysql php-mysql php
+
+b、启动httpd服务
+systemctl restart httpd
+
+c、 解压  phpMyAdmin 包
+tar -xf phpMyAdmin-2.11.11-all-languages.tar.gz
+mv phpMyAdmin-2.11.11-all-languages /var/www/html/phpmyadmin
+
+d、配置config.inc.php ，指定MySQL主机地址
+
+cp phpmyadmin/config.sample.inc.php  phpmyadmin/config.inc.php      //拷贝模版作为config.inc.php配置文件
+
+vim config.inc.php 
+$cfg['blowfish_secret'] = 'plj123'; /* YOU MUST FILL IN THIS FOR COOKIE AUTH! */         //17行   ''  内容不能为空 
+$cfg['Servers'][$i]['host'] = 'localhost';    //31行
+
+e、创建授权用户
+chown -R apache:apache    /var/www/html/phpmyadmin/    //安全考虑
+
+f、浏览器访问、登陆使用
+真机访问：firefox  http://192.168.4.50/phpmyadmin
+
+
+==============用户授权及权限撤销==============
+
+三、用户授权及权限撤销
+3.0  管理员密码
+必须用操作系统的管理员身份登陆系统，才能对数据库的管理员密码进行改变
+
+恢复数据库管理员root用户本机登陆密码
+]#systemctl  stop mysqld.service           //停止服务
+]#vim /etc/my.cnf
+	[mysqld]
+		skip_grant_tables
+		#validate_password_policy=0
+		#validate_password_length=6
+
+]# systemctl  restart mysqld
+]# mysql -uroot -p123456
+
+mysql> update mysql.user set authentication_string=password('123qqq...A')   where   user='root'  and  host='localhost';              //重设root的密码
+mysql> flush privileges;			//刷新授权表
+mysql> exit                                              //退出mysql> 环境
+
+]#vim /etc/my.cnf
+	[mysqld]
+		#skip_grant_tables
+		validate_password_policy=0
+		validate_password_length=6
+]# systemctl  restart mysqld
+]# mysql -uroot -p123qqq...A
+
+修改数据库管理员root用户本机登陆密码
+]# mysqladmin -hlocalhost  -uroot -p password  "新密码"
+Enter password: 输入当前密码
+]# mysql -uroot -p新密码
+	mysql>
+
+3.1 用户授权
+	在数据库服务器上添加连接用户及设置访问权限
+
+3.2  默认哪个用户有授权权限
+	数据管理员root用户本机登陆才有授权权限
+
+3.3 授权记录在哪 
+	授权库 mysql 库里（四个原始库之一）
+	与授权相关的表：
+		user  				：已有的授权用户及访问权限
+		db					：记录已有授权用户对数据库的访问权限
+		tables_priv 		：记录已有的用户对表的访问权限
+		columns_priv	：记录已有授权用户对字段的访问权限
+
+3.4 授权命令的格式
+	先登陆再做 以下操作
+
+	grant  权限列表  on  数据库名   to  用户名@"客户端地址"  identified by  "密码"  [with  grant option]
+with  grant option    给新添加的用户赋予grant权限
+
+注意：
+当 库名.表名 为 *.* 时，匹配所有库的所有表
+授权设置存放在 mysql 库 里  user 表
+
+权限列表
+all   ： 匹配所有权限
+select，update……     某些具体权限
+select，update（字段1，字段2……）   某些字段的某些权限
+
+客户端地址：
+%  : 匹配所有主机
+192.168.1.%  ： 匹配某个具体网段
+192.168.4.1  ： 匹配某个指定的主机
+%.tedu.cn		:匹配谟阁域
+
+mysql> grant all on *.* to mydba@"%" identified by "123456" with grant option;
+
+client:192.168.4.51  访问
+mysql -h192.168.4.50 -u mydba -p123456
+
+查看当前用户：
+mysql>  select  user();
++--------------------+
+| user()             |
++--------------------+
+| mydba@192.168.4.51 |
++--------------------+
+
+查看授权命令：
+mysql>  show grants;
++--------------------------------------------------------------+
+| Grants for mydba@%                                           |
++--------------------------------------------------------------+
+| GRANT ALL PRIVILEGES ON *.* TO 'mydba'@'%' WITH GRANT OPTION |
++--------------------------------------------------------------+
+
+
+3.5  相关命令
+	select user();
+	show grants;
+	show grants  for  用户名@"客户端地址";     //管理员查看其他用户的权限
+	select user,host  from mysql.user;			//显示授权用户
+
+3.6  撤销用户授权
+revoke  权限列表  on 库名.表名  for  用户名@"客户端地址"; 
+
+revoke  insert,delete on *.* from mydba@"%";		//撤销某个权限
+revoke  all  on *.* from mydba@"%";  				//撤销所有权限
+revoke  grant option  on *.* from mydba@"%";			//撤销授权权限
+
+3.7 删除用户授权
+drop  user   用户名@"客户端地址"; 
+
+drop user mydba@"%";     		//删除mydba用户
+
+
+
+
+授权用户连接后给自己重设密码：
+set password = password("新密码")；
+
+管理员重置授权用户连接密码：
+set   passsword  for 用户名@"客户端地址"=password("新密码");
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

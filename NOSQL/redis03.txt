@@ -1,0 +1,568 @@
+
+========redis主从复制==========
+一、概述
+1、结构模式
+	一主以从		一主多从		主从从
+
+2、主从复制工作原理
+	slave向master发送sync命令
+	master启动后台存盘进程，并收集所有修改数据命令	
+	master后台完成存盘后，传送整个数据文件到slave
+	slave接受数据文件，加载到内存中完成首次完全同步
+	后续有新数据产生时，master继续将新数据修改命令收集，然后依次传给slave，完成同步
+
+3、主从复制缺点
+a、网络繁忙，会产生数据同步延时问题
+b、系统繁忙，会产生数据同步延时问题
+
+++++++配置主从复制++++++
+
+一、配置主从结构
+1、临时配置从库（52）----------命令行配置
+
+----redis服务运行后，默认都是master主库
+
+查看角色信息：
+]# redis-cli -h 192.168.4.52 -p 6352
+192.168.4.52:6352> info replication			//查看主从信息
+# Replication
+role:master				//自己的角色，主库
+connected_slaves:0			//自己的从库为0
+
+把自己作为从库：52
+格式：在数据库里设置
+slaveof	主库ip	主库端口号
+
+> slaveof 192.168.4.51 6351			//把51做为52的主库
+OK
+> info replication
+# Replication
+role:slave						//本身角色
+master_host:192.168.4.51		//主库是谁
+master_port:6351					//主库端口
+
+从库配置完成后，自己数据库上的数据会被主库上的数据覆盖
+
+从库恢复自己主库的身份
+>slaveof no one
+
+2、永久设置从库-----修改配置文件
+添加格式： sloveof   主库ip   主库端口号
+
+]# vim /etc/redis/6379.conf
+#格式： sloveof   主库ip   主库端口号
+282  slaveof 192.168.4.51 6351
+]# /etc/init.d/redis_6379 stop
+]# /etc/init.d/redis_6379 start
+
+3、有验证的主从配置
+a、主库（51）设置连接密码
+]# vim /etc/redis/6379.conf
+requirepass 123456
+]# /etc/init.d/redis_6379 stop
+]# /etc/init.d/redis_6379 start
+
+b、从库52在配置文件里指定连接主库的密码
+指定格式：masterauth   "主库连接密码"
+
+]# vim /etc/redis/6379.conf 
+masterauth  "123456"
+]# /etc/init.d/redis_6379 stop
+]# /etc/init.d/redis_6379 start
+连接数据库，查看配置信息
+
+
+二、配置主从从结构
+54永久配置为52的从库
+]# vim /etc/redis/6379.conf 
+slaveof 192.168.4.52 6352
+
+]# /etc/init.d/redis_6379 stop
+]# /etc/init.d/redis_6379 start
+]# redis-cli -h 192.168.4.54 -p 6354
+> info replication 
+
+
+三、哨兵模式
+	可以运用在主库坏掉后，从库自动升级为主库
+	监视主从复制结构中的主库，当主库不能提供服务时，从对应的从库里选择新的主库，
+1、创建服务的主配置文件
+vim /etc/sentinel.cnf
+格式：
+bind   0.0.0.0    //启用的哨兵服务监视所有的主机
+sentinel monitor    主机名   主库ip		主库端口	票数
+sentinel   auth-pass  主机名   主库密码
+主机名：自定义
+ip地址：master主机的ip地址
+端口：master主机redis服务使用的端口
+票数：有几台哨兵主机连接不上主库时，切换主库
+主库密码：主库的登陆密码
+
+例子：
+vim /etc/sentinel.cnf
+bind 0.0.0.0 
+sentinel monitor ser51  192.168.4.51  6351  1
+sentinel   auth-pass   ser51 123456
+
+2、启动哨兵服务
+]# redis-sentinel /etc/sentinel.cnf      //启动哨兵服务，会把监视信息输出在屏幕上，占用一个终端
+
+3、测试
+停止主库，会升级另一个书库出来
+
+
+++++++++++++持久化++++++++++++++++
+
+
+两种持久化同时开的时候，AOF优先
+生产情况下，RDB和AOF同时开
+
+一、RDB
+1、RDB介绍
+Redis DataBase
+数据持久化方式之一
+按照指定时间间隔，将内存中的数据集 快照写入硬盘
+术语叫Snapshot快照，快照文件：dump.rdb
+恢复时，将快照文件直接读入内存
+
+
+2、配置参数
+a、文件名
+dbfilename	"dump.rdb"			//指定快照文件名
+save		""								//禁用RDB
+
+b、数据从内存保存到硬盘的频率
+save 900 1				//900s内有1次修改，保存
+save 300 10				//300s内有10次修改，保存
+save 60 10000			//60s内有10000次修改，保存
+
+3、手动存盘
+save				//阻塞写存盘，其他人在存数据时，不能存盘
+bgsave			//不阻塞写存盘，其他人在存数据时，不影响存盘
+压缩
+rdbcompression	yes|no    //yes压缩，no不压缩
+
+在存储快照后，使用crc16苏纳发做数据校验
+rdbchecksum	yes|no     //yes 校验   no 不校验
+
+bgsave出错时停止写操作
+stop-writes-on-bgsave-error   yes|no
+
+4、恢复数据
+备份50
+]#cp 	/var/lib/redis/6379/dump.rdb
+恢复数据55
+]#scp root@192.168.4.50:/root/dump.rdb   .
+]#/etc/init.d/redis_6379 stop
+]# rm -rf /var/lib/redis/6379/*
+]#cp dump.rdb  /var/lib/redis/6379/
+]#/etc/init.d/redis_6379 start
+]# redis-cli -h 192.168.4.55 -p 6355
+
+5、RDB优点/缺点
+优点：
+a、高性能的持久化实现——创建一个子进程来执行持久化，先将数据写入临时文件，持久化过程结束后，在用这个临时文件爱你替换上次持久化好的文件；过程中主进程不做任何IO操作
+b、比较适合大规模数据恢复，且对数据完整型要求不是非常高的场合
+
+缺点：
+意外宕机时，最后一次持久化的数据会丢失
+
+二、AOF
+1、AOF介绍
+	只做追加操作的文件，Append Only File
+---记录redis服务所有写操作
+---不断将新的写操作，追加到文件末尾
+---使用cat命令可以查看文件内容
+
+2、配置参数(配置文件里)
+a、文件名
+appendfilename "appendonly.aof"		//指定文件名
+appendonly yes				//启用aof，默认使用no
+
+b、AOF文件记录写操作的方式
+appendfsync		always		//有新操作立即记录（同时写入硬盘）
+appendfsync		everysec		//每秒记录一次（同时写入硬盘）
+appendfsync		no				//从不记录（只记录到aof文件，不同步到硬盘）
+
+c、日志文件不断增大，什么时候会触发日志重写
+--redis会记录是上次重写时的AOF文件的大小
+--默认配置当aof文件是上次rewrite后大小的1倍且文件大于64MB时触发
+auto-aof-rewrite-percentage 100		//第二次或更多的重写的百分比，即将上一次合并后的大小翻一倍之后，再次合并
+auto-aof-rewrite-min-size 64mb		//第一次重写
+
+d、修复AOF文件
+	把文件恢复到最后一次的正确操作
+格式：
+redis-check-aof  --fix  AOF文件名
+
+3、使用AOF文件备份/恢复数据
+a、备份数据
+	备份appendonly.aof 文件到其他位置
+cp   数据库目录/appendonly.aof   备份目录
+
+b、恢复数据
+	拷贝文件到数据库目录，重启redis服务
+cp  备份目录/appendonly.aof  数据库目录/
+/etc/init.d/redis_端口    stop
+/etc/init.d/redis_端口    start
+
+4、AOF优点/缺点
+a、优点
+	可以灵活设置持久化方式，同步持久化appendfsync always  或 异步持久化 appendfsync everysec
+	出现意外宕机时，仅丢失1秒的数据
+
+b、缺点
+	持久化文件的体积通常会大于RDB方式
+	执行fsync策略时的速度可能会比RDB方式慢（恢复速度慢于RDB方式）
+
+++++++++++++++++++++++++++++++
+先启用RDB，然后启用AOF，AOF会覆盖RDB的文件，若是不覆盖RDB的文件：则：
+>config set appendonly yes
+>config rewrite
+在命令行开启AOF，不会出现覆盖RDB的情况
+
++++++++++++++++++++++++++++++++
+
+
+
+++++++++++数据类型+++++++++++
+
++++++++string字符串++++++++
+
+1、set的全部命令  
+set key value [EX seconds] [PX milliseconds] [NX|XX]
+	--设置key及值,过期时间可以为秒或毫秒
+	--NX  若是变量不存在时，给变量赋值
+	--XX  变量是否存在，都可以给变量赋值
+
+> set name3 tom
+> set name3 asd nx		//此时无法再给name3赋值
+(nil)
+> set name3  lili xx		//可以再次给name3
+赋值
+192.168.4.50:6350> get name3
+"lili"
+
+mset  批量定义变量及值,空格分开
+> mset a 1 b 1 c 3
+
+
+
+2、setrange key  offset value
+	-从偏移量开始改写特定位置的值
+例子：
+> set name  apache
+OK
+> setrange name 0 A
+(integer) 6
+> get name
+"Apache"
+> set tel 18317824545
+> setrange tel 5 33			//从第5个开始及以后的一个数字改为33
+> get tel
+"13517334545"
+
+3、strlen key
+	--统计字符串长度
+
+例子：
+> set tel 13556547896
+OK
+> strlen tel
+(integer) 11
+
+4、append key  value
+	--变量存在则对变量的值追加，不存在则创建变量及赋值
+> get name
+"Apache"
+> append name 12
+> get name
+"Apache12"
+> append name1 lili
+> get name1
+"lili"
+
+5、setbit key offset value
+	setbit  变量名  偏移量   变量值
+bitcount  key [start end]  
+	-对key所存储的字符串，设置或清除特定偏移量上的为（bit）
+	-value值只能为 0 或 1 ，offset为0～2^32之间
+	-key不存在，创建新key
+
+优点：节省内存空间
+例子：用来记录某个网站在什么时间段最为活跃；记录网站用户上线频率，如用户A上线了多少天等类似的数据。
+> setbit every 0 1
+> setbit every 1 0
+> setbit every 2 1
+> setbit every 3 1
+> bitcount every 			//统计出来的结果是1的个数
+(integer) 3
+
+
+6、decr key
+	-将key的值减1，key不存在则先初始化为0，然后再减1 
+decrby  key  某个数值		//定义减的值
+例子：
+> set a 10
+> decr a
+(integer) 9
+> get a		-->9
+> decrby a 5
+(integer) 4
+> get a		-->4
+
+
+
+7、get key			//查看某个变量的值
+
+mget  key1 key2 ……  //查看多个变量的值
+
+getrange	key  start  end		//查看某个变量的部分值
+---若是负数的时候，则从后往前排列开始计算,-1为倒数第一个
+例子：
+> get tel
+"13556547896"
+> getrange tel 0 5
+"135565"
+> getrange tel 0 2
+"135"
+> getrange tel -5  -2
+"4789"
+
+> mget a tel
+1) "4"
+2) "13556547896"
+
+8、incr  incrby incrbyfloat----加
+a、incr key   --自加整数
+	-将key的值加1，key不存在则先初始化为0，然后再加1
+	-主要应用为计数器
+b、incrby  key increment
+	-将key的值增加为任意数
+c、incrbyfloat key increment    ——自加小数
+例子：
+> set a 1
+> incr a
+> incr a
+> incr a
+> incrby a 5
+> get a
+"9"
+> incrbyfloat a 1.1
+"10.1"
+
+
++++++++++++list列表+++++++++++
+一、list列表
+1、redis的list是一个字符队列
+2、先进后出
+3、一个可以可以有多个值
+
+二、list列表操作
+1、设置列表类型变量
+格式：lpush
+lpush key value [value ...]
+	//建一个或多个值value插入到列表key里
+	//若key不存在，则创建key并赋值
+例子：
+> lpush name a b c
+
+2、获取列表类型变量的值
+格式：
+lrange key start stop     //从开始位置读取key的值到stop结束
+例子：
+> lrange name 0 2		//从0位开始，读到2位为止（输出第一个到第三个值）
+> lrange name 0 -1		//显示所有的值
+
+
+3、删除
+格式：
+lpop key
+	-删除第一个元素并显示到屏幕，若是key不存在，返回nil
+例子：
+> lpop name
+"e"
+> lrange name 0 -1
+1) "d"
+2) "c"
+3) "b"
+4) "a"
+
+4、llen key		//查看列表变量值的个数
+例子：
+> llen name
+(integer) 4
+
+5、查看列表里的值
+格式：
+ lindex key index
+	-查看列表中的第index（几）个值
+例子：
+> lindex name 1		//显示变量里第二个值
+"c"
+192.168.4.50:6350> lindex name 2	//显示变量里第三个值
+"b"
+
+6、修改列表里的某个值
+格式：
+lset key index value
+	-将key中的index位置的值修改为value
+例子：
+> lset name  3 r		//把第四个值改为r
+> lrange name 0 -1
+1) "d"
+2) "c"
+3) "b"
+4) "r"
+
+7、把值插入末尾
+rpush  key value [value ...]
+	-将value插入到key的末尾
+例子：
+> rpush name h
+> lrange name 0 -1
+1) "d"
+2) "c"
+3) "b"
+4) "a"
+5) "h"
+> lpush name e
+> lrange name 0 -1
+1) "e"
+2) "d"
+3) "c"
+4) "b"
+5) "a"
+6) "h"
+
+
+8、删除末尾的值
+格式：
+rpop  key
+	-删除并返回key末尾的值
+例子：
+> rpop name
+"h"
+> lrange name 0 -1
+1) "e"
+2) "d"
+3) "c"
+4) "b"
+5) "a"
+> lpop name
+"e"
+> lrange name 0 -1
+1) "d"
+2) "c"
+3) "b"
+4) "a"
+
+
++++++++++Hash表++++++++++
+
+一、Hash表简介
+	-是一个string类型的field和value的映射表
+	-一个key可以对应多个列field,一个field对应一个value
+	-将一个对象存储为hash类型，较于每个字段都存储成string类型更能节省内存
+
+二、Hash表操作命令
+1、hset key field value --- 将hash表中field值设置为value（设置一个变量key，变量有列field，列field的值为value）
+
+例子：
+> hset sch  nj 5
+(integer) 1
+
+2、hget key field  -- 获取hash表里的field的值（获取变量key里某一列field的值）
+ 例子：
+> hget sch nj
+"5"
+
+3、 hmset key field value [field value ...] --- 同时给变量key设置多列field并赋值value
+例子：
+> hmset sch bj 20  tec 100 stu 1000
+
+4、hmget key field [field ...]	-- 查看变量key的多列field的值
+例子：
+> hmget sch nj bj tec
+1) "5"
+2) "20"
+3) "100"
+
+5、hgetall key  -- 获取hash表里变量的所有信息（有哪些列，对应的值是什么）
+例子：
+> hgetall sch
+1) "nj"
+2) "5"
+3) "bj"
+4) "20"
+5) "tec"
+6) "100"
+7) "stu"
+8) "1000"
+
+6、 hkeys key   -- 输出变量已有的列名
+例子：
+> hkeys sch
+1) "nj"
+2) "bj"
+3) "tec"
+4) "stu"
+
+7、hvals key  --获取hash表里变量的值输出
+例子：
+> hvals sch
+1) "5"
+2) "20"
+3) "100"
+4) "1000"
+
+8、del key    --删除hash表里的变量
+例子：
+> hdel sch tec nj
+> hkeys sch
+1) "bj"
+2) "stu"
+
+9、hdel key field [field ...]   --删除变量的某列
+例子：
+> hdel sch tec nj
+> hkeys sch
+1) "bj"
+2) "stu"
+
+补充：
+开启aof持久化时；若是执行了flushall的时候，再恢复数据时，要在aof文件里，删除flushall这一条
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

@@ -1,0 +1,394 @@
+
+#########################===day01=====############################
+
+
+
+60年代  分组交换
+70～80年代  TCP/IP 
+90年代  web
+
+iso
+ieee
+
+internet  广域网  WAN 10～100公里
+		    局域网	LAN 1公里一内
+
+网络拓扑结构
+点对点   一般在wan网络中使用
+
+星形 好实现，容易扩展，方便故障排查
+网状 提高可靠  一般在lan网络使用
+
+bit 比特     100000000bit    1000Mbit=1Gbit
+
+1000=1K
+1000k=1M
+
+双绞线
+utp非屏蔽     stp屏蔽
+
+cat5   五类线      100M
+cat5e  超五类线   100M
+cat6   六类线       1000M
+cat7   七类线       10000M
+
+T568A 
+T568B 白橙  橙  白绿   蓝   白蓝   绿   白棕  棕
+
+光纤
+
+全反线  console 控制线  初次配置设备时使用
+
+win2008   密码 Taren1
+
+交换机工作模式的进入如下：
+Switch>        //当前处于用户模式
+Switch>enable   //切换为特权模式
+Switch# configure terminal  	//进入全局配置模式
+Switch(config)#interface fastEthernet 0/1      //进入接口模式
+exit   //返回上一模式
+end 或 快捷键 ctrl+z //可以在接口模式下直接回到特权模式
+
+修改交换机主机名，要在全局配置模式
+Switch(config)#hostname s1 		//配置主机名
+查看交换机当前的运行配置，要在特权模式
+s1#show running-config  	 //查看当前的运行配置，可以按空格翻页
+
+Switch(config)#enable password Taren1    //配置密码
+Switch#write    //保存配置
+Switch#reload   //重启设备
+Switch#erase startup-config    //清空配置文件，恢复出厂状态
+
+
+配置禁用DNS查询
+switch(config)#no ip domain-lookup
+
+配置输入同步
+Switch(config)#line console 0
+Switch(config-line)#logging synchronous 
+
+解决方法
+配置控制台会话时间，0 0是永不超时
+Switch(config)#line console 0
+Switch(config-line)#exec-timeout 0 0
+
+
+
+#########################===day02=====############################
+
+
+
+资源共享 数据通信 提高可靠 提高系统处理能力
+分组交换   tcp/ip  web
+iso  ieee
+wan  lan
+路由器  交换机
+点对点   wan
+星形 
+网状 
+osi
+物理层  数据链路层  网络层  传输层  会话层  标示层  应用层
+tcp/ip
+物理层  数据链路层  网络层  传输层   应用层
+比特流  数据帧         数据包  数据段
+网卡      交换机        路由器   防火墙   pc
+
+双绞线  utp  stp
+cat5   cat5e   cat6  cat7
+t568a  白绿  绿   白橙  蓝  白蓝  橙  白棕 棕
+t568b
+
+console线
+
+用户模式
+特权模式
+全局配置模式
+接口   0/1   0/2
+
+ip   192.168.0.1    
+11000000.10101000.00000000.00000001    32位
+mac 物理地址 硬件地址     48位
+52:54:00:f8:f9:d7
+52-54-00-f8-f9-d7
+5254-00f8-f9d7
+
+0123456789ABCDEF
+
+52-54-00-00-00-01
+
+单播   1对1
+组播   1对多
+广播   1对所有
+
+mtu  最大传输单元
+
+15000
+1500*10
+
+mac  用来标识一个物理设备
+
+PC（windows环境）命令行输入 ipconfig /all 查看mac地址
+Switch#show mac-address-table   //在交换机中查看mac地址表
+
+4096
+0～4095
+1000
+1
+
+在全局配置模式下创建VLAN
+Switch(config)#vlan 2   //创建vlan2
+Switch(config-name)#name xiaoshou   //为vlan2命名
+Switch(config)# interface f0/3   //进入f0/3接口
+Switch(config-if)# switchport access vlan 2   //把接口放入vlan2
+Switch#show vlan brief   //查看vlan摘要信息
+Switch(config)#interface range f0/5-6   //同时进入5、6接口
+Switch(config)# interface f0/7   //进入f0/7接口
+Switch(config-if)# switchport access vlan 3   //把接口放入vlan3
+     考虑问题：如何让相同vlan的服务器互通？
+
+
+access  接入链路     承载1个vlan
+trunk   中继链路     承载多个vlan
+Switch(config)# interface f0/7   //进入f0/7接口
+Switch(config-if)#switchport mode trunk   //将接口改为中继链路模式
+
+SW1#show interface f0/24 switchport    //查看接口详细信息
+
+配置以太通道
+Switch(config)# interface range fastEthernet 0/1-2    //进入1、2口
+Switch(config-if-range)#channel-group 1 mode on   //将两个接口配置为以太通道，通道组号是1
+
+测试效果
+Switch(config)#interface f0/1   
+Switch(config-if)#shutdown     //关闭接口
+Switch(config-if)#no shutdown     //打开接口
+Switch#show etherchannel summary   //查看以太通道汇总信息
+
+配置思路：
+1，将7、8口都加入相同vlan，都配置好trunk
+2，将7、8口组建为以太通道
+3，两台交换机都做相同操作
+
+以太通道配置原则：
+参与捆绑的接口必须属于同一个vlan，如果是在中继模式下，要求所有参加捆绑的接口都是在中继模式下
+如果接口配置的是中继模式，那么应该在链路的两端将通道中的所有接口配置成中继模式
+
+
+#########################===day03=====############################
+
+
+
+mac 硬件地址  物理地址
+长度48位   6字节
+8位（bit）=1字节（byte）
+100Mbit   10+
+前24位 供应商标示，后24位产品编号
+单播 1对1    组播  1对多   广播  1对所有
+
+数据帧
+目标地址   源地址   类型/长度   数据（MTU1500） 校验
+学习  广播  转发  更新
+广播域
+vlan  广播控制   增加安全  带宽利用率提高   延迟减低
+trunk 中继链路   打标记   ieee 802.1q(dot1q)
+以太通道
+
+网络层功能
+连接不同范围的主机 
+
+A 1～127
+255.0.0.0
+B 128～191
+255.255.0.0
+C 192～223
+255.255.255.0
+
+
+192.168.0.1
+255.255.255.0   
+11111111.11111111.11111111.00000000      1的部分是网络位
+									0的部分是主机位
+192.168.0.0    网络ID
+192.168.0.255   广播地址
+									
+									
+192.168.1.2
+255.255.255.0
+网段
+
+路由器配置ip：
+Router(config)#interface gigabitEthernet 0/0   //进入G0/0接口
+Router(config-if)#ip address 192.168.1.254   255.255.255.0	//配置ip地址
+Router(config-if)#no shutdown 	  //打开接口
+
+路由表  标识了当前设备能够到达的网段，以及方向
+
+Router#show ip route    //查看路由表
+
+C 直连路由   产生条件是接口配置ip并且处于开启状态
+S 静态路由   由管理员手工配置，并且设备两端都要相同的配置，否则有去无回，由目标网段（网络ID）+子网掩码+下一跳地址构成
+S* 默认路由  特殊的静态路由，在路由表中可以到达任意地点，其他路由条目无法到达时，将使用默认路由，通常在企业网关设备对外出口使用。
+     动态路由  使用某种动态路由协议实现，可以做到自动学习路由条目，根据网络状态自动变化来达成网络互通的目的
+ 
+宣告  对外通告本设备能够到达的网段
+    
+255.255.255.0
+0.0.0.255
+
+路由环路
+
+ip route 0.0.0.0 0.0.0.0 下一跳
+
+
+第一台路由器
+Router(config)#ip route 192.168.3.0 255.255.255.0 192.168.2.2     //配置前往3.0网段并且出口方向是192.168.2.2的静态路由
+第二台路由器
+Router(config)#ip route 192.168.1.0 255.255.255.0 192.168.2.1  	 //配置前往1.0网段并且出口方向是192.168.2.1的静态路由
+
+Router(config)#interface g0/0   //进入G0/0接口
+Router(config-if)#no ip address    //删除此接口的ip
+
+思路：
+1，考虑所要前往的目标网段
+2，考虑前往的目标网段第一步往哪个ip跳
+3，使用静态路由添加目标网段的网络ID与下一跳
+
+三层交换机基本配置：
+SVI  交换机虚拟接口
+Router(config)#vlan 2
+Router(config)#interface vlan 2    //进入虚拟接口
+Router(config-if)#ip address 192.168.2.254  255.255.255.0 //配置SVI接口地址 
+Router(config)#interface f0/2
+Router(config-if)#switchport access vlan 2  //将接口加入vlan2
+Router(config)#ip routing     //开启路由功能
+
+思路：
+1，添加二层交换机一台，创建vlan2 vlan3
+2，将二层交换机f0/2口加入vlan2，f0/3口加入vlan3
+   f0/24口配置为中继模式
+Switch(config)#in f0/2
+switchport access vlan 2  //将接口加入vlan2
+Switch(config)#in f0/3
+switchport access vlan 3  //将接口加入vlan3
+Switch(config)#in f0/24
+Switch(config-if)#switchport mode trunk	
+3，在三层交换机的f0/24口上封装802.1q协议
+	然后配置为中继模式
+三层交换机配置中继链路，先封装802.1q协议，再配置
+Switch(config)#interface fastEthernet 0/24
+Switch(config-if)#switchport trunk encapsulation dot1q 		  //打封装
+Switch(config-if)#switchport mode trunk		
+
+三层交换机配置：
+Switch(config)#interface fastEthernet 0/23
+Switch(config-if)#no switchport   //将交换机接口转换为路由器接口
+Switch(config-if)#ip address 192.168.4.1 255.255.255.0    //配置ip
+
+配置动态路由：
+三层交换机配置
+Switch(config)#router ospf 1
+Switch(config-router)#network 192.168.1.0 0.0.0.255 area 0
+    //宣告本机所在的直连网段，区域都是0
+Switch(config-router)#network 192.168.2.0 0.0.0.255 area 0
+Switch(config-router)#network 192.168.3.0 0.0.0.255 area 0
+Switch(config-router)#network 192.168.4.0 0.0.0.255 area 0
+路由器配置
+Router(config)#router ospf 1
+Router(config-router)#network 192.168.4.0 0.0.0.255 area 0
+
+
+#########################===day04=====############################
+
+
+路由功能   将数据从一个网络传递到另一个网络
+路由设备依靠路由表传递数据
+直连路由，静态路由，默认路由，动态路由
+ip routing 
+
+传输层
+定义端口号  65535个  0号保留 1～1023 是知名服务端口号
+为了实现端到端的传输
+传输层使用两个协议：
+tcp 传输控制协议，数据在传输过程中比较安全可靠，但是效率较低，面向连接的
+
+syn 准备与对方建立连接
+ack 确认信息
+fin 与对方断开连接
+
+syn---ack,syn---ack
+fin---ack---fin---ack
+
+udp 用户数据报协议，无连接，数据传递不可靠，但效率高
+
+
+
+acl
+
+permit  允许
+deny    拒绝
+反掩码
+0 匹配
+1 不匹配
+
+使用标准acl限制pc2
+Router(config)#access-list 1 deny 192.168.2.1 0.0.0.0 
+或
+Router(config)#access-list 1 deny host 192.168.2.1
+以上两条配置其中一条即可，效果相同。
+
+Router(config)#access-list 1 permit any  //放行其他数据
+
+在接口中应用acl
+Router(config)#interface gigabitEthernet 0/1
+Router(config-if)#ip access-group 1 in
+
+实验二：
+Router(config)#access-list 1 permit host 192.168.2.1   //允许192.168.2.1通过
+
+
+使用扩展ACL过滤数据
+Router(config)#access-list 100 deny tcp host 192.168.2.1 host 192.168.1.1 eq 21   //禁止2.1访问1.1的ftp服务
+Router(config)#access-list 100 deny tcp host 192.168.2.2 host 192.168.1.1 eq 80   //禁止2.2访问1.1的web服务
+Router(config)#access-list 100 permit ip any any  //放行其他业务
+
+Router(config)#interface gigabitEthernet 0/1
+Router(config-if)#ip access-group 100 in   //在接口中应用acl
+
+ipv4 32位   42亿
+ipv6 128位     
+
+192.168.0.1  100.0.0.1             200.0.0.1  192.168.0.1
+
+100M     500～800    动态公网ip    故障率
+50M     40000        固定公网ip
+
+静态   一般用于服务器发布服务到公网，一台服务器使用一个公网ip
+静态端口映射   只发布某个服务到公网时使用
+
+PAT  一般用于仅访问外网时使用，比如员工办公室
+
+配置静态nat转换
+Router(config)#ip nat inside source static 192.168.1.1 100.0.0.2   //将1.1转换为100.0.0.2
+Router(config)#interface g0/1
+Router(config-if)#ip nat outside   //外网区域设置外边
+Router(config)#interface g0/0
+Router(config-if)#ip nat inside    //内网区域设置里边
+
+使192.168.1.2也能发布服务到外网，新购买公网地址100.0.0.3
+Router(config)#ip nat inside source static 192.168.1.2 100.0.0.3  
+
+静态端口映射
+Router(config)#ip nat inside source static tcp 192.168.1.1 80 100.0.0.2 80   //只发布80端口的服务到公网
+
+PAT
+Router(config)#access-list 1 permit 192.168.1.0 0.0.0.255   //限定可以访问外网的主机范围是192.168.1.0网段
+
+Router(config)#ip nat inside source list 1 interface g0/1 overload    //使用pat复用外网接口地址，使192.168.1.0网段所有主机可以访问外网（外网设备无法访问内网设备）
+
+
+#########################===day05=====############################
+
+
+
+
+

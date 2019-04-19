@@ -1,0 +1,272 @@
+
+
+===============MHA集群================
+
+一、MHA集群：多台服务器一起提供相同的服务（LB)
+			LB：一起提供服务  Nginx lvs Haproxy
+			HA：主备方式提供服务	Keepalived
+二、MHA软件：
+	1、perl语言开发的软件
+	2、由日本DeNA公司开发
+	3、实现MySQL高可用
+	4、数据库自动故障切换操作能在0～30秒之内完成
+	5、可确保在故障切换过程中保证数据的一致性，以达到真正意义上的高可用
+
+三、MHA软件组成
+	1、管理节点（MHA Manager）
+	监视每个的一组多从结构的master
+		---可单独部署在一台独立的机器上
+		---也可以部署在一台slave节点上
+	2、数据节点（MHA Node）
+		--运行在每台MySQL服务器上
+
+四、MHA工作过程
+1、由Manager 定时探测集群中的master节点
+2、当master故障时，Manager自动将拥有的最新数据的slave提升为新的master
+关键：
+1、从宕机崩溃的master保存二进制日志文件
+2、时别含有最新更新的slave
+3、应用差异的中继日至（relay log）到其他的slave
+4、应用从master保存的二进制日志文件
+5、提升一个slave为新的master
+6、使其他的slave连接新的master进行复制
+
+
+
+
+五、环境准备
+1、配置所有数据节点主机之间可以互相以ssh密钥对方式认证登陆
+2、配置manager56主机 无密码ssh登录 所有数据节点主机
+3、按装perl软件包
+]# yum -y install perl-*
+
+================配置MHA集群环境=============
+一、环境准备
+51（master） 52 53 54 55 56（manager） 
+1、配置所有数据节点主机之间可以互相以ssh密钥对方式认证登陆
+2、配置manager56主机 无密码ssh登录 所有数据节点主机
+3、每台机按装perl软件包
+]# yum -y install perl-*
+
+4、配置主从同步,要求如下：
+51 主库		     开半同步复制
+52 从库（备用主库）  开半同步复制
+53 从库（备用主库）  开半同步复制
+54 从库 不做备用主库所以不用开半同步复制 
+55 从库 不做备用主库所以不用开半同步复制
+
+二、配置步骤
+
+步骤一、配置51master节点，52  53 也做此操作
+1、开启半同步模块
+]#vim  /etc/my.cnf
+[mysqld]
+validate_password_policy=0
+validate_password_length=6
+plugin-load= "rpl_semi_sync_master=semisync_master.so;rpl_semi_sync_slave=semisync_slave.so"		//开启半同步模块
+rpl_semi_sync_master_enabled=1		//开启半同步模块
+rpl_semi_sync_slave_enabled = 1		//开启半同步模块
+relay_log_purge=off			//永久屏蔽自动删除中继日志文件
+binlog_format='mixed'
+log-bin=master51
+server_id=51
+:wq
+]#systemctl restart mysqld		//重起mysqld
+
+2、屏蔽自动删除中继日志文件
+mysql> set global relay_log_purge=off;		//临时屏蔽自动删除中继日志文件
+
+3、授权一个repluser有repliciation权限
+
+步骤二、配置2台slave服务器  54  55 
+1、开启半同步模块
+]#vim  /etc/my.cnf
+[mysqld]
+validate_password_policy=0
+validate_password_length=6
+plugin-load= "rpl_semi_sync_slave=semisync_slave.so"		//开启半同步模块
+rpl_semi_sync_slave_enabled = 1		//开启半同步模块
+relay_log_purge=off			//永久屏蔽自动删除中继日志文件
+binlog_format='mixed'
+server_id=51
+:wq
+]#systemctl restart mysqld		//重起mysqld
+
+2、屏蔽自动删除中继日志文件
+mysql> set global relay_log_purge=off;		//临时屏蔽自动删除中继日志文件
+
+3、配置为从服务器
+chang master to ……
+start slave；
+show slave status；
+
+
+===============配置MHA集群================
+一、配置管理主机192.168.4.56
+1、安装perl依赖包
+]#yum -y install perl-*
+2、安装 mh-node包  及其  安装 mha-manager包（perl编译安装）
+]# yum -y install  mha4mysql-node-0.56-0.el6.noarch.rpm 	//必须先安装
+
+]# cd soft/mysql/mha-soft-student
+]# tar -xf mha4mysql-manager-0.56.tar.gz 			//解开 mha-manager压缩包
+]# cd mha4mysql-manager-0.56/
+
+]# perl Makefile.PL					//查看perl依赖包是否安装完全，出现以下信息，安装完全
+*** Module::AutoInstall version 1.03
+*** Checking for Perl dependencies...
+[Core Features]
+- DBI                   ...loaded. (1.627)
+- DBD::mysql            ...loaded. (4.023)
+- Time::HiRes           ...loaded. (1.9725)
+- Config::Tiny          ...loaded. (2.14)
+- Log::Dispatch         ...loaded. (2.41)
+- Parallel::ForkManager ...loaded. (1.18)
+- MHA::NodeConst        ...loaded. (0.56)
+*** Module::AutoInstall configuration finished.
+Checking if your kit is complete...
+Looks good
+Writing Makefile for mha4mysql::manager
+Writing MYMETA.yml and MYMETA.json
+
+]# make && make install				//perl编译安装
+
+3、创建管理服务的主配置文件
+]# mkdir /etc/mha_manager		//创建一个配置文件存放目录
+]# cd soft/mysql/mha-soft-student/mha4mysql-manager-0.56/
+]# cp app1.cnf  /etc/mha_manager/        //把配置文件模版拷贝到目录下
+
+]# vim /etc/mha_manager/app1.cnf 			//编辑配置文件
+
+[server default]					//管理主机的自身的默认配置
+manager_workdir=/etc/mha_manager/		//管理服务的工作目录
+manager_log=/etc/mha_manager/manager.log		//管理服务的日志文件
+master_ip_failover_script=/etc/mha_manager/master_ip_failover				//故障切换脚本(分配虚拟ip部署在哪台主机上)
+
+ssh_user=root				//各个数据库服务器之间无密码登陆，用root用户
+ssh_port=22
+
+repl_user=repluser			//给从库同步数据的授权用户(和数据库上的授权相同)
+repl_password=123456		//给从库同步数据的授权用户密码
+
+user=root							//给检测(56)一个数据库用户
+password=123456				//给检测一个数据库用户密码
+
+[server1]							//定义数据库服务器
+hostname=192.168.4.51
+port=3306							//默认端口号，也可以不写
+candidate_master=1				//竞选主库
+
+[server2]
+hostname=192.168.4.52
+candidate_master=1
+
+[server3]
+hostname=192.168.4.53
+candidate_master=1
+
+[server4]
+hostname=192.168.4.54
+no_master=1					//不竞选主库，纯从库
+
+[server5]
+hostname=192.168.4.55
+no_master=1
+
+二、配置数据库服务器主机  192.168.4.51～55
+~]# cd soft/mysql/mha-soft-student/
+~]# yum -y install mha4mysql-node-0.56-0.el6.noarch.rpm		//安装mha-node软件
+
+
+三、根据管理主机的配置做相应的设置
+1、在数据库服务器51～55添加监控用户user
+mysql> grant all on *.* to root@"%" identified by "123456";    //按照管理主机配置的"user="值相同
+
+2、在数据库服务器52～53添加同步用户repluser
+mysql> grant replication slave on *.* to repluser@"%" identified by "123456";
+
+3、修改故障切换脚本(分配虚拟ip部署在哪台主机上)
+]# cp master_ip_failover /etc/mha_manager/
+]#  vim   /etc/mha_manager/master_ip_failover	
+更改35行：my $vip = '192.168.4.100/24';     //""里的ip改为规划的vip
+
+]# chmod +x /etc/mha_manager/master_ip_failover			//给该perl脚本赋予执行权限
+
+4、把vip(192.168.4.100)部署在当前主库51上
+]# ifconfig eth0:1 192.168.4.100		//给51部署虚拟ip（vip）
+
+四、在管理主机（56）上检测配置
+1、检测ssh无密码连接
+]# masterha_check_ssh --conf=/etc/mha_manager/app1.cnf
+All SSH connection tests passed successfully.      //表示测试成功
+
+2、检测一主多从  主从同步
+]# masterha_check_repl --conf=/etc/mha_manager/app1.cnf
+MySQL Replication Health is OK.				//表示成功
+
+3、排错，看有error的行
+1、故障脚本权限
+2、备用主库开binlog日志
+3、主库与备用主库保持数据一致（Binlog_Do_DB……）
+4、mha-node的包需要安装
+
+五、启动管理主机上的 管理服务
+1、启动服务
+masterha_manager  启动时，使用的选项
+--remove_dead_master_conf  		//删除宕机主库配置
+--ignore_last_failover		//忽略XXX.health健康检查文件
+]# masterha_manager  --conf=/etc/mha_manager/app1.cnf 		//启动服务
+
+2、查看状态
+~]# masterha_check_status --conf=/etc/mha_manager/app1.cnf 		//查看状态
+
+六、测试集群
+1、在主库51上添加访问数据及连接用户gyx1
+]# create database gamedb；
+mysql> grant all on gamedb.* to  gyx1@"%" identified by "123456";
+客户端50连接：
+]#mysql -h192.168.4.100 -ugyx1 -p123456
+mysql>create table  gamedb.s(
+	id int);
+mysql>insert into gamedb.s values(1),(2),(3),(4);
+
+2、停止服务
+]# masterha_stop  --conf=/etc/mha_manager/app1.cnf
+
+七、测试高可用集群
+
+]# masterha_manager --conf=/etc/mha_manager/app1.cnf   remove_dead_master_conf  --ignore_last_failover
+
+在主库51上停止数据库服务，会自动回到备用主库52上
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

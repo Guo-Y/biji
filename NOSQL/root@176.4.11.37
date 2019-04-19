@@ -1,0 +1,276 @@
+
+
+												MongoDB
+
+一、MongoDB介绍
+是介于关系数据库好人非关系数据库之间的产品
+	1、基于分布式文件存储的数据库，旨在为WEB应用提供可扩展的高性能数据存储解决方案
+	2、将数据存储为一个文档（类是JSON对象），数据结果由键值（key-->value）对组成
+	3、支持丰富的查询表达，可以设置任何属性的索引
+	4、支持副本集（集群），分片
+
+二、相关概念
+
+
++++++++++++搭建MongoDB服务++++++++++++
+一、装包——免安装，解压后即可使用
+1、
+]# cd soft/mongodb/
+]# mkdir  /usr/local/mongodb		//创建mongodb工作目录
+]# tar -xf mongodb-linux-x86_64-rhel70-3.6.3.tgz 		//解压
+]# ls mongodb-linux-x86_64-rhel70-3.6.3     //包里的文件
+bin  GNU-AGPL-3.0  MPL-2  README  THIRD-PARTY-NOTICES
+
+]# cp -r mongodb-linux-x86_64-rhel70-3.6.3/bin/ /usr/local/mongodb/    //把包里的bin（mongodb的命令）目录拷贝到 mongodb工作目录
+
+]# cd /usr/local/mongodb/
+]# mkdir -p etc log data/db			//创建日志存放目录 ，配置文件存放目录，数据库数据存放目录  
+
+2、手动写配置文件
+]# vim etc/mongodb.conf
+logpath=/usr/local/mongodb/log/mongodb.log   //指定日志存放位置
+logappend=true			//追加方式记录日志信息
+dbpath=/usr/local/mongodb/data/db		//数据库目录
+fork=true				//守护进程方式运行
+
+3、启动服务
+]# /usr/local/mongodb/bin/mongod -f /usr/local/mongodb/etc/mongodb.conf 
+child process started successfully, parent exiting    //成功开启
+
+4、查看服务状态信息
+端口：27017
+]# netstat -anptu | grep mongod
+tcp        0      0 127.0.0.1:27017         0.0.0.0:*               LISTEN      3224/./bin/mongod  
+
+5、停止服务
+]#  /usr/local/mongodb/bin/mongod  -f   /usr/local/mongodb/etc/mongodb.conf --shutdown				
+
+设置别名：
+alias mstop='/usr/local/mongodb/bin/mongod  -f   /usr/local/mongodb/etc/mongodb.conf --shutdown	'
+alias mstart='/usr/local/mongodb/bin/mongod  -f   /usr/local/mongodb/etc/mongodb.conf'
+
+二、mogodb基本使用
+1、连接（命令严格区分大小写）
+
+/usr/local/mongodb/bin/mongo		//本地连接，默认没有密码
+> show dbs				//查看有哪些库
+admin   0.000GB
+config  0.000GB
+local   0.000GB
+> use local			//进入某个库
+switched to db local
+> db						//查看当前在哪个库
+local
+> show tables			//查看集合（表）
+startup_log
+>exit 					//退出mongodb
+
+2、修改ipd地址及端口号
+]# vim /usr/local/mongodb/etc/mongodb.conf 
+bind_ip=192.168.4.50
+port=27050
+]# mstop
+]# mstart
+]#/usr/local/mongodb/bin/mongo --host 192.168.4.50 --port 27050
+
+
+++++++++++MongoDB基本使用+++++++++
+
+一、常用管理命令
+1、查看、创建、切换、删除库
+show  dbs			//查看已有的库
+db					//显示当前所在的库
+use 库名		//有库进入库；没有库创建并进入库
+show collections 或 show tables		//查看当前库下已有的集合（表）
+db.dropDatabase()   //删除当前所在的库
+
+2、数据库命名规则
+
+3、集合（表）管理------查看、创建、删除集合
+命令格式：
+show collections 或 show tables	// 查看集合
+db.集合名.drop() 						//删除集合
+db.集合名.save({'',''}) 					//创建集合，集合不存在时，创建并添加文档，一个{}代表一个文档（记录），一个文档（记录）可以有多列
+
+4、集合命名规范
+
+5、文档管理	
+命令格式：
+db.集合名.find()				//查看所有文档
+db.集合名.count()			//统计有多少文档
+db.集合名.insert({“name”:”jim”})
+db.集合名.find(条件)				//查看与条件匹配的所有文档
+db.集合名.findOne() 				//返回（显示）查询第一条文档
+db.集合名.remove({}) 				//删除所有文档
+db.集合名.remove({条件})		// 删除与条件匹配的所有文档
+
+
+二、基本数据类型
+
+1)字符串string：UTF-8字符串都可以表示为字符串类型的数据  {“x”：“呵呵”}
+2）布尔值：布尔类型有两个值true和false，{“x”:true}
+例子：
+> db.info.save({name:"zhangsan",marry:true})
+> db.info.save({name:"liwu",marry:false})
+
+3）null：用于表示空值或者不存在的字段，{“x”:null}
+
+> db.t4.save({name:null})
+
+4）数值：shell默认使用64为浮点型数值，{“x”:3.14}或{“x”:3}，
+----整型值，可以使用NumberInt（4字节符号整数）可以存带小数的值，但是值显示整数位（numberint）
+----NumberLong（8字节符号整数），不允许存在小数的值，{“x”:NumberInt(“3.45”)}{“x”:NumberLong(“3”)}
+例子：
+> db.t4.save({z:NumberInt(3.55)})		//成功存入
+WriteResult({ "nInserted" : 1 })
+> db.t4.save({z:NumberLong(3.55)})			//存不进去
+> db.t4.find()
+{ "_id" : ObjectId("5c9c82f256969a1aebf5f34a"), "z" : 3 }   //存的时候为小数，显示是整数
+
+5）数组：数据列表或数据集可以表示为数组，{“x”: [“a“，“b”,”c”]}，一个字段有多个值
+例子：
+> db.t1.save({q:["1","2","3"]})
+> db.t1.find()
+{ "_id" : ObjectId("5c9c7d9356969a1aebf5f33f"), "q" : [ "1", "2", "3" ] }
+
+6）代码：查询和文档中可以包括任何JavaScript代码，{“x”:function(){/*…*/}}
+例子：
+> db.t1.save({name:"dm" ,cript:function(){/* <?php echo hello ?> */}})
+WriteResult({ "nInserted" : 1 })
+> db.t1.find({name:"dm"})
+{ "_id" : ObjectId("5c9c7e9756969a1aebf5f341"), "name" : "dm", "cript" : { "code" : "function (){/* <?php echo hello ?> */}" } }
+
+
+7）日期：日期被存储为自新纪元依赖经过的毫秒数，不存储时区，{“x”:new Date()}；以系统的时间戳
+例子：
+> db.t1.save({name:"bobo",wokertime:new Date()})
+
+8） 对象id：对象id是一个12字节的字符串，是文档的唯一标识，{“x”: ObjectId() }；（相等于musql里主建和自增长一起使用）(objectid
+)
+例子：
+> db.t1.save({stunum:ObjectId(),name:"yaya",class:"nsd"})
+WriteResult({ "nInserted" : 1 })
+> db.t1.find({name:"yaya"})
+{ "_id" : ObjectId("5badfa966827555e3fd86816"), "stunum" : ObjectId("5badfa966827555e3fd86815"), "name" : "yaya", "class" : "nsd" }
+//自己定义一个id字段，一般情况下都用内置的id字段，相当于mysql里的primary key auto_increment
+
+9）内嵌文档：文档可以嵌套其他文档，被嵌套的文档作为值来处理，{“x”:{“y”:3 }}
+例子：
+> db.t2.save({x:{y:3,d:4,f:6}})
+> db.t2.find()
+{ "_id" : ObjectId("5c9c800956969a1aebf5f345"), "x" : { "y" : 3, "d" : 4, "f" : 6 } }
+
+10）正则表达式：查询时，使用正则表达式作为限定条件，语法与JavaScript的正则表达式相同，{“x”:/[abc]/}
+例子：
+> db.t2.save({name:"lili" ,a:/[zbc]/})
+> db.t2.find({name:"lili"})
+{ "_id" : ObjectId("5c9c814d56969a1aebf5f347"), "name" : "lili", "a" : /[zbc]/ }
+
+
++++++++++数据导入导出+++++++++
+
+
+一、数据导出(默认以json格式导出)
+1、格式1：
+]# mongoexport  --host  IP地址 --port 端口号  -d  库名  -c 集合名 -f 字段名1,字段名2 …… --type=csv   >   目录名/文件名.csv
+例子：
+/usr/local/mongodb/bin/mongoexport --host 192.168.4.50 --port 27050 -d gamedb -c info -f name,marry --type=csv > /root/info.csv
+
+2、格式2：
+]# mongoexport  --host  IP地址 --port 端口号  -d  库名  -c 集合名  -q '{条件}' -f 字段名1,字段名2 …… --type=csv   >   目录名/文件名.csv
+
+注意：导出格式为csv时，必须使用  -f 指定字段名列表
+
+
+3、格式3：
+]# mongoexport  --host  IP地址 --port 端口号  -d  库名  -c 集合名  -q '{条件}' -f 字段名1,字段名2 …… --type=json   >   目录名/文件名.json
+例子：
+]# /usr/local/mongodb/bin/mongoexport --host 192.168.4.50 --port 27050 -d gamedb -c t2 --type=json > /root/info.json
+
+二、数据导入
+1、格式1：
+]# mongoimport  --host  IP地址 --port 端口号  -d  库名  -c 集合名   --type=json   目录名/文件名.json
+注意：用json的格式导入：表里要没有数据，不然导入不成功
+
+例子：
+]#  /usr/local/mongodb/bin/mongoimport --host 192.168.4.51 --port 27051 -d gamedb -c user --type=json  /root/t1a.json 
+
+2、格式2：
+]# mongoimport  --host  IP地址 --port 端口号  -d  库名  -c 集合名  --type=csv  --headerline --drop     目录名/文件名.csv
+注意：用csv的格式导入：表里可以有数据
+		必须指定文件的列名，不然不成功 -f和--headerline不能一起用，但是必须有一个
+  			--headerline：把第一行的字段隐藏即去掉文件列的标题name，不然标题也会导进去，导入时表可以不存在
+		--drop  删除重名的数据，然后导入数据
+
+例子：info.csv  里有7条数据+1条字段名
+]#  /usr/local/mongodb/bin/mongoimport --host 192.168.4.51 --port 27051 -d gamedb -c user1 -f name,marry --type=csv  /root/info.csv 				//导入的是8条数据，导入字段名
+
+]#  /usr/local/mongodb/bin/mongoimport --host 192.168.4.51 --port 27051 -d gamedb -c user2 --headerline --type=csv  /root/info.csv 			//导入的是7条数据，没有导入字段名
+
+案例：把/etc/passwd 文件导入到mongodb数据库里
+]# pwd
+/usr/local/mongodb
+]# cp /etc/passwd  /root/passwd.csv			//把文件复制到其他位置，并命名为.csv结尾的文件
+]# sed -i s/:/,/g /root/passwd.csv 			//把文件内容修改为csv类型，csv类型以 , 分割
+]# sed -i '1iname,passwd,uid,gid,comment,homedir,shell' /root/passwd.csv 			//把文件内容修改为csv类型，添加字段名列表
+]# ./bin/mongoimport --host 192.168.4.50 --port 27050 -d userdb -c user --type=csv --headerline /root/passwd.csv 		//导入数据库
+]# ./bin/mongo --host 192.168.4.50 --port 27050		//登陆查看是否导入成功
+
+
+++++++++++++数据备份与恢复++++++++++++
+一、数据备份
+1、备份时不指定备份的库和备份目录
+在哪个目录执行命令，备份文件存放在哪
+]# mongodump --host  IP地址 --port 端口号
+		//不指定备份哪个库，默认备份所有，不指定目录，自动生成dump目录，备份的数据在这个里面
+
+
+*.bson  恢复数据使用，
+查看*.bson：bsondump  路径/*.bson
+
+2、备份时指定备份的库和备份目录
+
+]# mongodump --host  IP地址 --port 端口号  -d  库名 -o 目录
+				//备份一个库
+]# mongodump --host  IP地址 --port 端口号  -d  库名 -c 集合名 -o 目录				//备份某个表
+
+]# /usr/local/mongodb/bin/mongodump  --host 192.168.4.50 --port 27050  -d gamedb -c t1 -o /root/mongobak/		//备份某个表	
+]# /usr/local/mongodb/bin/mongodump  --host 192.168.4.50 --port 27050  -d userdb -o /root/mongobak/		//备份一个库
+
+
+三、数据恢复
+
+]# scp -r root@192.168.4.50:/root/mongobak/userdb .   //拷贝备份数据到本机
+
+]# /usr/local/mongodb/bin/mongorestore  --host 192.168.4.51 --port 27051 -d userdb -c user userdb/user.bson 		//把user表恢复到本机
+	
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

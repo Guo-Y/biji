@@ -1,0 +1,403 @@
+
+================数据导入导出=============
+
+一、数据导入导出
+1、数据导入导出默认检索目录
+1.1 查看默认检索目录名称
+show variables like 'secure_file_priv';
++------------------+-----------------------+
+| Variable_name    | Value                 |
++------------------+-----------------------+
+| secure_file_priv | /var/lib/mysql-files/ |
++------------------+-----------------------+
+1.2修改默认检索目录名称
+]# mkdir /mydata      //创建一个文件夹
+]# chown mysql /mydata/    //更改该文件夹的属性
+]# vim /etc/my.cnf    			// 编辑配置文件
+[mysqld]
+secure_file_priv="/mydata"    //把secure_file_priv  的值重新赋值为刚刚创建的文件夹，即把默认的检索目录改为  刚刚创建的文件夹
+
+]# systemctl stop mysqld
+]# systemctl start mysqld
+]# mysql -uroot -p123456
+	mysql> show variables like 'secure_file_priv';
++------------------+----------+
+| Variable_name    | Value    |
++------------------+----------+
+| secure_file_priv | /mydata/ |
++------------------+----------+
+
+
+2、数据导入
+	把系统文件爱你的内容存储到数据库里
+2.1 命令格式
+	load data infile "目录名/文件名" into table 数据库.表名	fields terminated by "分隔符" 		lines terminated by "\n";
+
+2.2  步骤
+1、把系统文件拷贝到检索目录下
+	cp /etc/passwd /mydata/passwd  //把文件拷贝到默认检索目录下
+
+2、根据导入文件的内容创建表
+例子：
+	mysql -uroot -p123456				// 登陆mysql
+
+	create database userdb;		// 创建userdb库
+
+	create  table userdb.user(			//根据文件 在数据库userdb里建user表
+	name char(150),
+	passwd char(1),
+	uid int,
+	gid int,
+	comment char(150),
+	homedir char(180),
+	shell char(50)
+	); 
+3、执行数据导入命令
+	load data infile "/mydata/passwd" into table userdb.user fields terminated by ":" lines terminated by "\n";    //把文件到入到user表里
+	alter table userdb.user add id int primary key auto_increment first;    //给user表里添加一个id字段
+
+导入注意事项：
+	1、字段分隔符要与文件内的一致，行分隔符为“\n”
+	2、指定导入文件的绝对路径
+	3、导入数据的表字段类型要与文件字段匹配（字段个数及其宽度要与文件相符）
+	4、禁用Selinux保护机制
+
+
+3、数据导出
+	把数据库的数据表里的记录存放到系统文件
+3.1 	命令格式
+	a、SQL查询 into outfile "目录名/文件名";
+	b、SQL查询 into outfile "目录名/文件名"  fields  terminated by "分隔符"  lines terminated by "\n";
+
+例子：
+select *  from userdb.user  into outfile  "/mydata/a.txt";
+select name,shell  from userdb.user  into outfile "/mydata/a1.txt";
+select name,shell from userdb.user into outfile "/mydate/a2.txt" fields terminated by "#" lines terminated by "\n";
+
+注意事项：
+1、导出的内容是由SQL查询语句决定
+2、导出的是表中的记录，不包括字段名
+3、禁用Selinux
+
+===============管理表记录==================
+
+二、管理表记录
+
+2.1 插入表记录 insert  into
+1、向表中插入1条记录给所有字段赋值
+	insert  into 库名.表名 values(字段值列表);
+
+	insert into userdb.user values(555,'lili','X','1500','1500','lilis','/home/lili','/bin');
+
+2、向表中插入多条记录给所有字段赋值
+	insert  into 库名.表名 values(字段值列表),(字段值列表),(字段值列表);
+
+	insert into userdb.user values(556,'lili','X','1500','1500','lilis','/home/lili','/bin'),(556,'lisi','X','1501','1501','lisis','/home/lisi','/sbin/nologin');
+
+3、向表中插入1条记录给个别字段赋值
+	insert  into 库名.表名(字段名列表) values(值列表);
+
+	insert into userdb.user(name,shell) values	('yuan','bin');
+
+4、向表中插入多条记录给1字段赋值
+	insert  into 库名.表名(字段名列表) values(值列表),(值列表),(值列表);
+
+	insert into userdb.user(name,shell) values	('yuan','bin'),('yuan','sbin');
+
+2.2 查询表记录 select
+	命令格式：
+	select   字段名列表   from 数据库.表名 where 条件表达式;
+	select   字段名列表   from 数据库.表名;
+
+条件用来控制行数，字段名列表控制列数。
+
+2.3 更新表记录
+命令格式：
+	update  库名.表名 set 字段名=值，字段名=值   where 条件;
+	update  库名.表名 set 字段名=值;   //批量更改整个字段的值
+
+	update userdb.user set passwd='a';
+	update userdb.user set passwd='x'  where name='root';
+
+2.4   删除表记录
+命令格式：
+	delete  from  库名.表名;    //删除所以表记录，生产时不用
+	delete  from  库名.表名   where 条件表达式;
+
+	delete from userdb.user where name='lili';
+
+================匹配条件=================
+
+三、匹配条件
+3.1  基本匹配条件
+1、数值比较  > >=   <  <=    =   !=
+	where 字段名  符号  数字
+
+	select name,uid from userdb.user where uid<=10;
+	select name,uid,gid from userdb.user where uid=gid;
+
+2、 字符比较 
+		类型						 用途
+		=							相等
+		!=							不相等
+		IS NULL				匹配空值
+		IS NOT NULL        匹配非空值
+
+	select name,shell from userdb.user where shell='/sbin/nologin';
+	select name,shell from userdb.user where shell != 'bin';
+	select name,uid  from userdb.user where uid is null;
+	select name,uid  from userdb.user where uid is not null;
+3、逻辑匹配
+		类型						 用途
+		or							逻辑或  多个判断条件某个成立即可
+		and						逻辑与  多个判断条件同时成立
+		！	或 not				逻辑非	取反
+			()						提高优先级
+
+	select name,uid  from userdb.user where uid is not null and uid<=5;
+	select name,uid  from userdb.user where uid is not null or gid=100;
+
+4、 范围内匹配/去重显示
+	in(值列表)								在……里……
+	not in(值列表)						不在……里……
+	between 数字1 and 数字2		在……之间……
+	distinct 字段名						去重显示
+	select name from userdb.user
+			 where name not in 	('rot','mysql','adm','sync');
+	select name from user where uid between 5 and 10;
+	select name from userdb.user
+			 where name in ('rot','mysql','adm','sync');	
+	select distinct shell from user;
+	
+3.2  高级匹配条件
+
+1、模糊查询
+格式：
+	where 字段名 like  '通佩符'
+通佩符：_ 代表一个字符
+			% 代表任意多的字符
+
+select name from user where name like '__%___';    //查找name字段有5个及以上字母组成的值
+select name from user where name like '____';    //查找name字段是4个字母组成的值
+select name from user where name like '%a%';    //查找name字段里含有a的值
+
+2、正则表达式
+格式：
+	where 字段名 regexp '正则表达式'
+正则元字符 ^ $ . [] *
+select name,uid from user where name regexp '[0-9]';     //查找名称有数字的值
+ select name,uid from user where name regexp '^r.*t$';    //查看name以r开头及以t结尾的name
+ select name,uid  from user where uid regexp '^..$';    //0.
+
+
+3、四则计算
+符号 + - * / %
+
+select name,uid,gid,uid+gid he from user where name = 'root';    //查看name，uid，gid及uid+gid的和
+update user set gid=gid+1;   //把gid字段的值加1
+alter table user add age int default 31;    //添加一个age字段
+select name,2019-age csn from user where name='root';   //查看root的出生时间
+
+()		提高优先级
+select name,uid,gid,(uid+gid)/2 pjz from user where name='bin';     //查看uid  gid 和的平均数
+
+
+====================过滤查询结果================
+
+3.3  过滤查询结果
+1、聚集函数
+mysql内置数据统计函数
+	avg(字段名)			//统计字段平均值
+	sum(字段名)			//统计字段之和
+	min(字段名)			//统计字段最小值
+	max(字段名)			//统计字段最大值
+	count(字段名)		//统计字段值个数
+	count(*)				//统计字段有多少行
+
+select count(name) from user where shell = '/sbin/nologin';   //查看shell 为 /sbin/nologin 的有多少行
+select count(*) from user;        //查看user表有多少行
+select max(gid) from user where id<=20;    //查看id小于等于20 的 gid最大为多少
+ select max(gid) from user;     //查看user表里gid 最大的值
+select min(gid) from user;     //查看user表里gid 最小的值
+select min(gid) from user where id<=20;
+select sum(gid) from user;
+select sum(gid) from user where id<=20;
+select avg(gid) from user;
+select avg(gid) from user where id<=20;
+
+2、查询结果排序
+基本用法：
+SQL 查询  order  by 字段名  [asc(升序)  |   desc（降序）];
+
+select name,uid from user order by uid;           //默认为升序
+select name,uid from user order by uid desc;    //降序
+
+
+3、查询结果分组
+基本用法：
+SQL 查询  group  by 字段名;
+
+select shell from user  group by shell;     //查看 user 表 shell可以分几组
+select shell from user where uid<=1500  group by shell;     //查看uid<=1500  的shell可以分几组
+
+
+4、 过滤查询结果
+基本用法：
+SQL 查询 having  条件表达式; 
+SQL 查询   where 条件 having  条件表达式;
+SQL 查询  group   by   字段名   having  条件表达式;
+
+select name,uid from user where uid<10 having name='root';
+select shell  from user where uid<10 having shell='/bin/bash';
+
+5、限制查询结果显示行数
+基本用法：
+SQL 查询  limit N;    //显示查询结果前N条记录
+SQL 查询  limit N,M;    //显示指定范围内的查询记录
+
+SQL 查询  where 条件查询 limit  3;      //显示查询结果前3条记录
+SQL 查询  where 条件查询 limit  3,3;   //从第4条开始，共显示3条
+
+select name,uid from user where uid <1000 limit 3;
+select name,uid from user where uid <1000 limit 3,3;
+
+select name,uid,shell from user where uid<1000 group by shell,name,uid having name='root';
+
+
+===================存储引擎==============
+
+四、Mysql存储引擎
+Mysql存储引擎体系结构   (8个组件)
+a、管理组件：mysql自带的命令
+b、连接池：验证用户连接和检查系统资源
+c、SQL接口：把sql命令传给mysqld进程处理
+d、分析器：检查sql命令语法
+e、优化器：对执行的sql命令优化
+f、查询缓存：存储空间   存储查询过的数据（8M 从物理内存划分出来的）
+g、存储引擎：处理表的处理器
+h、文件系统：机器的硬盘
+
+存储引擎：
+	由可插拔式的组件提供，是mysql自带的功能程序,处理表的处理器；不同存储引擎由不同的功能和数据存储方式。
+
+4.1  查看存储引擎
+1、查看已有表的使用存储引擎
+	mysql> show  create table 表名\G;
+2、查看数据库服务默认使用的存储引擎
+	mysql> show engines;
+
+4.2  修改存储引擎
+1、修改数据库服务默认使用的存储引擎
+	 vim /etc/my.cnf
+	 [mysqld]
+	default-storage-engine=MyISAM
+
+	 systemctl restart mysqld
+
+2、修改表使用的存储引擎
+	alter table 表名 engine=存储引擎;
+	alter table t4 engine=myisam;
+
+3、建表时指定表使用的存储引擎
+create table t4(id int) engine=memory;
+
+4.3存储引擎特点
+
+1、Innodb 的特点
+支持外键
+支持行级锁
+支持事务和事务回滚
+事务特点
+对应表文件个数：2个   /var/lib/mysql/库名
+
+文件：.frm(结尾的文件)  	存表结构
+		.ibd(结尾的文件)		存表数据及index信息
+
+2、Myisam 的特点
+支持表级锁
+不支持外键、事务、事务回滚
+对应表文件个数：3个（.frm  .MYD .MYI）
+
+文件：.frm(结尾的文件)  存表结构
+		.MYD(结尾的文件)  存数据
+		.MYI(结尾的文件)	存index信息
+
+3、术语：
+==========锁=======
+锁粒度：
+a、表级锁：一次直接对表进行加锁，其他用户不能访问该表
+b、行级锁：只锁定某一行
+c、对整个页面（Mysql管理数据的基本存储单位）进行加锁（内存加锁）
+
+锁类型：
+a、读锁（共享锁）：支持并发读（有一个客户端在读的时侯允许其他客户端读，但是不允许写操作）
+b、写锁（互斥锁、排他锁）：是独占锁，上锁期间其他线程（客户端）不能读表或写表
+
+查看当前锁状态：
+show	status like 'table_lock%';
+
+mysql> show status like 'table_lock%';
++-----------------------+-------+
+| Variable_name         | Value |
++-----------------------+-------+
+| Table_locks_immediate | 109   |
+| Table_locks_waited    | 0     |
++-----------------------+-------+
+
+==========事务===========
+
+事务：一次访问从开始到断开的过程被称为事务
+
+事务回滚：在一次访问过程中，任意一步操作失败，恢复之前的所有操作  叫做事务回滚
+
+事务日志文件：记录对所有innodb存储引擎表的操作
+ibdata1    		没有提交的命令，没有完成的命令，存放在/var/lib/mysql
+ib_logfile0    已经提交的命令，正确完成的命令，存放在/var/lib/mysql
+ib_logfile1		已经提交的命令，正确完成的命令，存放在/var/lib/mysql
+
+==========事务特性==========
+
+事务特性：ACID
+Atomic：原子性
+事务的整个操作是一个整体，不可分割，要么全部成功，要么全部失败
+Consistency：一致性
+事务操作前后，表中记录没有变化
+Isolation：隔离性
+事务操作是相互隔离不受影响的（多个用户同时操作时，不受彼此的影响）
+Durability：持久性
+数据一旦提交，不可改变，永久改变表数据
+
+查看提交状态：
+show variables like 'autocommit';
++---------------+-------+
+| Variable_name | Value |
++---------------+-------+
+| autocommit    | ON    |
++---------------+-------+
+
+关闭自动提交：
+set autocommit=off;
+
+数据回滚：rollback
+
+insert into t1 values(444);   //为t1添加数据
+select  * from t1;  //数据添加成功
+rollback;				//没有保存，把数据回滚
+select  * from t1;	//恢复为原来的数据，没有添加的444这一条数据
+
+提交数据：commit
+
+
+4.4 如何确定使用哪种引擎？
+	select 操作多的表，适合使用mysiam存储引擎，节省系统资源
+	insert/update/delete  操作多的表，适合使用innodb存储引擎，优点在于并发访问量大
+
+
+
+
+
+
+
+
+
+

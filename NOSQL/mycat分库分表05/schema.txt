@@ -1,0 +1,52 @@
+<?xml version="1.0"?>
+<!DOCTYPE mycat:schema SYSTEM "schema.dtd">
+<mycat:schema xmlns:mycat="http://io.mycat/">
+	<schema name="TESTDB" checkSQLschema="false" sqlMaxLimit="100">
+		<table name="travelrecord" dataNode="dn1,dn2,dn3" rule="auto-sharding-long" />
+<!--global  在每台数据库都会存储这个表   -->
+		<table name="company" primaryKey="ID" type="global" dataNode="dn1,dn2,dn3" />
+		<table name="goods" primaryKey="ID" type="global" dataNode="dn1,dn2,dn3" />
+		<table name="hotnews" primaryKey="ID" autoIncrement="true" dataNode="dn1,dn2,dn3"
+			   rule="mod-long" />
+		<table name="employee" primaryKey="ID" dataNode="dn1,dn2,dn3"
+			   rule="sharding-by-intfile" />
+<!-- dn1,dn2,dn3 指定表存储在哪些数据库上,本身需要定义  -->
+		<table name="customer" primaryKey="ID" dataNode="dn1,dn2,dn3"
+			   rule="sharding-by-intfile">
+			<childTable name="orders" primaryKey="ID" joinKey="customer_id"
+						parentKey="id">
+				<childTable name="order_items" joinKey="order_id"
+							parentKey="id" />
+			</childTable>
+			<childTable name="customer_addr" primaryKey="ID" joinKey="customer_id"
+						parentKey="id" />
+		</table>
+	</schema>
+<!--dataNode 代表数据节点  dataHost 叫什么没关系，database=''的数据库名称需要在数据库机上创建,不能重复  -->
+	<dataNode name="dn1" dataHost="mysql53" database="db1" />
+	<dataNode name="dn2" dataHost="mysql54" database="db2" />
+	<dataNode name="dn3" dataHost="mysql55" database="db3" />
+<!-- <dataHost> ...</datahost>	 代表数据主机  -->
+<!-- 指定数据主机，name 要与上面的dataHost=''相同， mycat用户用jinyaya，密码是123456 连接数据库  -->
+	<dataHost name="mysql53" maxCon="1000" minCon="10" balance="0"
+			  writeType="0" dbType="mysql" dbDriver="native" switchType="1"  slaveThreshold="100">
+		<heartbeat>select user()</heartbeat>
+		<writeHost host="hostM1" url="192.168.4.53:3306" user="jinyaya"
+				   password="123456" />
+		</writeHost>
+	</dataHost>
+	<dataHost name="mysql54" maxCon="1000" minCon="10" balance="0"
+			  writeType="0" dbType="mysql" dbDriver="native" switchType="1"  slaveThreshold="100">
+		<heartbeat>select user()</heartbeat>
+		<writeHost host="hostM2" url="192.168.4.54:3306" user="jinyaya"
+				   password="123456" />
+		</writeHost>
+	</dataHost>
+	<dataHost name="mysql55" maxCon="1000" minCon="10" balance="0"
+			  writeType="0" dbType="mysql" dbDriver="native" switchType="1"  slaveThreshold="100">
+		<heartbeat>select user()</heartbeat>
+		<writeHost host="hostM3" url="192.168.4.55:3306" user="jinyaya"
+				   password="123456" />
+		</writeHost>
+	</dataHost>
+</mycat:schema>

@@ -1,0 +1,317 @@
+
+
+=============数据库概述=============
+一、分类
+1、关系型数据库管理系统
+	按照预先设置的组织结构，将数据存储在物理介质上；
+	数据之间可以做关联操作
+软件：Oracle		DB2		MS SQL Server 		MySQL		MariaDB
+
+2、NoSQL（not only sql）
+	意思是“不仅仅是SQL”
+	泛指非关系型数据库
+	不需要预先定义数据存储结构
+	表的每条记录都可以有不同的类型和结构
+主流软件：Redis 	MongoDB		Memcached  （常用）
+				CouchDB   Neo4j		FlockDB
+
++++++++++++++Redis服务++++++++++++++
+
+一、Redis介绍
+Remote Dictionary Server(远程字典服务器)
+是一款高性能的（key/values）分布式内存数据库
+支持数据持久化，可以把内存里的数据保存到硬盘中
+也支持list、hash、set、zset 数据类型
+支持master-slave主从模式数据备份，以及集群
+www.redis.cn
+
+
+++++++++++配置Redis服务+++++++++
+一、装包
+1、源码编译安装
+]#yum -y install gcc
+]# cd soft/Redis
+]# tar -xf redis-4.0.8.tar.gz
+]#  cd redis-4.0.8/
+]# ls
+因为有Makefile 文件，所以不需要./configure
+]# make  && make install			//直接安装
+
+二、初始化配置
+
+1、配置服务的运行参数
+-端口
+-主配置文件
+-日志文件
+-数据库目录位置
+-启动时调用哪个执行文件（启动程序）
+-pid文件
+
+2、初始化配置
+]# ./utils/install_server.sh				//执行初始化脚本，该脚本已经存在
+Port           : 6379			//端口
+Config file    : /etc/redis/6379.conf		//主配置文件
+Log file       : /var/log/redis_6379.log		//日志文件
+Data dir       : /var/lib/redis/6379			//-数据库目录位置
+Executable     : /usr/local/bin/redis-server		//启动时调用哪个执行文件
+Cli Executable : /usr/local/bin/redis-cli		提供的命令行连接命令
+
+]# netstat -anptu | grep :6379		//查看连接状态
+
+3、连接Redis数据库服务
+]# redis-cli 						//连接本机的redis数据库服务
+127.0.0.1:6379> ping			
+PONG								//出现这个结果说明可以正常访问
+127.0.0.1:6379> set name bob		//存储数据
+OK
+127.0.0.1:6379> get name			//获得数据的值
+"bob"
+>exit			退出
+
+4、启动/停止服务
+启动服务
+ /etc/init.d/redis_<port>  stop 		port是设置的端口号
+
+]# /etc/init.d/redis_6379  start
+
+停止服务	此时会把存储的数据写入硬盘
+ /etc/init.d/redis_<port>  stop 
+
+]# /etc/init.d/redis_6379  stop   
+
+]# ls /var/lib/redis/6379/			
+dump.rdb							//存储数据库里写入的值
+
+三、常用操作指令
+1、查看数据库已有的变量
+keys	*			查看数据库所有的变量
+keys	???		查看数据库变量名为三个字符的变量
+
+2、测试变量是否存在
+exists	变量名1  变量名2    //不存在返回值为0
+
+3、切换库
+select   数据库编号0～15
+例子：
+127.0.0.1:6379> select 1
+OK
+127.0.0.1:6379[1]> select 0
+OK
+127.0.0.1:6379> 
+
+4、变量可以存储的时间
+ttl   变量名		
+返回值为’-1‘存在时间为永久
+返回值为‘-2’则变量不存在
+
+5、  设置变量有效时间
+expire		变量名		时间（单位s）
+
+6、测试变量类型
+type		变量名		（默认为字符）
+set 设置的变量都是字符类型
+
+7、把本库的变量以东到其他库里
+move	变量名	db编码
+
+8、删除数据库某个变量
+del	变量名
+
+9、删除数据库内存的所有变量
+flushall
+flushdb			删除所在库的内存数据
+
+10、保存所有变量--------save
+
+11、关闭redis服务	---------shutdown
+
+
+四、配置文件解析  /etc/redis/6379.conf
+1、数据单位
+1k => 1000 bytes
+1kb => 1024 bytes
+1m => 1000000 bytes
+1mb => 1024*1024 bytes
+1g => 1000000000 bytes
+1gb => 1024*1024*1024 bytes
+
+2、常用配置选项
+port  6379				//端口
+bind 127.0.0.1		//ip地址,多个
+tcp-backlog 511		//同时连接默认连接511个，可更改、
+timeout 0				//连接超时时间，0代表没有设置
+tcp-keepalive 300		//长连接时间，300s之内可以发送多次请求
+daemonize yes			//守护进程方式运行
+databases 16			//数据库个数
+logfile /var/log/redis_6379.log		//日志文件，pid文件
+maxclients 10000				//默认连接并发数
+dir /var/lib/redis/6379		//指定默认工作目录存放位置
+
+3、内存管理
+
+内存清除策略：
+volatile-lru	对设置了ttl生命周期的变量删除，清除最近最少使用的，空出所需的空间给本次存储使用
+allkeys-lru		在所有 数据里查找哪些最少使用，然后删除
+volatile-random	对设置了ttl生命周期的变量随机删除
+allkeys-random		对所有变量随机删除
+volatile-ttl （minor  TTL）			删除马上要过期的变量
+noeviction		永不不删除，写满时报错
+
+选项默认设置：
+maxmemory <bytes>		//没有定义则有多少内存，使用多少，最大内存
+maxmemory-policy  策略(noeviction) 		//定义使用策略
+maxmemory-samples 5			//定义参考数据例子的个数，符号参考数据例子的可以删除，针对lru和ttl策略
+
+4、设置连接密码
+requirepass 密码(foobared)		//设置密码项,一般注释了
+
+更改密码、端口……脚本就无法停止，启动服务了
+此时停止服务：
+redis-cli  -a 密码 shutdown
+
+例子：修改配置密码
+~]# vim /etc/redis/6379.conf 
+requirepass  database
+]# /etc/init.d/redis_6379  stop
+]# /etc/init.d/redis_6379  start
+]# redis-cli
+127.0.0.1:6379> ping
+(error) NOAUTH Authentication required.
+127.0.0.1:6379> auth database
+OK
+127.0.0.1:6379> ping
+PONG
+
+案例：
+要求：端口号 6350 、ip地址  192.168.4.50、连接密码  123456、客户端连接redis服务
+]# vim /etc/redis/6379.conf
+port  6350
+bind 192.168.4.50
+passwd 123456
+]# /etc/init.d/redis_6379  stop
+]# /etc/init.d/redis_6379  start
+]# redis-cli -h 192.168.4.50 -p 6350 -a 123456		//登陆数据库
+]#redis-cli -h 192.168.4.50 -a 123456 -p 6350 shutdown		//修改配置文件之后就用此方式关闭服务
+]# ps -C redis-server				
+
+5、修改/etc/init.d/redis_6379脚本代码，可以停止设置密码及ip和端口的服务
+vim  /etc/init.d/redis_6379
+43 $CLIEXEC -h 192.168.4.50  -p 6350 -a 123456 shutdown
+
+
+
+
+
+==========LNMP+Redis========
+
+要求：配置50主机运行网站服务nginx，要解释php代码，并且网站数据存储在本机的内存里
+
+1、安装源码nginx
+]# yum -y install gcc gcc-c++  pcre-devel   zlib-devel   gcc  //安装nginx源码安装的包
+]# tar -xf nginx-1.12.2.tar.gz 
+]# cd nginx-1.12.2/
+]# ./configure --prefix=/usr/local/nginx			
+]# make && make install       //编译及安装
+
+2、安装PHP及启动php
+]#yum -y install php-fpm-5.4.16-42.el7.x86_64.rpm 
+]#systemctl restart php-fpm
+
+3、修改nginx配置文件
+]# /usr/local/nginx/conf/nginx.conf			//配置nginx支持php
+//打开nginx支持php的功能
+
+4、启动niginx服务
+]# /usr/local/nginx/sbin/nginx -t		//测试nginx
+nginx: the configuration file /usr/local/nginx/conf/nginx.conf syntax is ok
+nginx: configuration file /usr/local/nginx/conf/nginx.conf test is successful
+]# /usr/local/nginx/sbin/nginx
+]# netstat -anptu | grep :80
+
+5、安装mysql及开启mysql服务
+
+6、检测php及redis是否安装
+]#yum -y install php    //安装php，支持php的命令
+]# php -m | grep redis    //检查php是否有支持redis功能模块
+]# netstat -anptu | grep :6350
+
+7、配置php支持redis
+]#cd soft/redis/lnmp
+]# yum -y install php-devel-5.4.16-42.el7.x86_64.rpm 	//安装php扩展（在包的存放位置里 执行，可把依赖包一起安装）
+]# tar -xf php-redis-2.2.4.tar.gz 
+]# cd phpredis-2.2.4/
+]# ls				//此时没有configure文件
+]# /usr/bin/phpize			//生成configure配置文件及/usr/bin/php-config
+]# ls				//此时已经有configure
+]# ls  /usr/bin/php-config 
+]# ./configure --with-php=/usr/bin/php-config
+]# make
+]# make install
+Installing shared extensions:     /usr/lib64/php/modules/(模块路径)
+]# ls  /usr/lib64/php/modules/   
+
+8、编写配置文件
+]# vim /etc/php.ini
+728  extension_dir = "/usr/lib64/php/modules/"
+730  extension = "redis.so"
+]# systemctl restart php-fpm
+]# php -m | grep -i redis
+redis
+
+9测试
+]# vim /usr/local/nginx/html/redis.php      //编辑一个php脚本
+<?php
+$redis = new redis();
+$redis ->connect('192.168.4.50',6350);
+$redis ->auth('123456');
+$redis ->set('test','4247488');
+echo $redis ->get('test');
+?>
+
+]# elinks -dump http://192.168.4.50/redis.php		//访问nginx
+]# redis-cli -h 192.168.4.50 -p 6350 -a 123456		//登陆数据库
+变量test存在
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

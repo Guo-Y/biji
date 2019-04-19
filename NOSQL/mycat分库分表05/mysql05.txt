@@ -1,0 +1,381 @@
+
+
+==================数据分片==================
+
+一、分库分表
+1、概念：
+	将存放在一个数据库中的数据，按照特定的方式拆分，分散到多个数据库中，以达到分散单台设备负载的效果哦
+
+2、方式1：垂直分割（纵向分割）
+	将单个表，拆分程多个表，分散到不同的数据库
+	将单个数据库的多个表进行分类，按业务类别分散到不同的数据库上
+3、方式2：水平分割（横向切分）
+	按照表中某个字段的某种规则，把表中的许多记录进行切分，分散到多个数据库中
+
+二、mycat软件
+	可提供数据库数据的分库分表服务
+	不适合大量查数据记录
+-支持JDBC形式连接
+-支持Mysql、Oracle、Sqlserver、Mongodb等
+-提供数据读写分离服务
+-可以实现数据库服务器的高可用
+-提供数据库分片服务
+-基于阿里巴巴Cobar进行研发的开源软件
+-适合数据库大量写入数据的存储需求
+
+
+三、mycat分片规则（10种）
+1、枚举法     sharding-by-intfile
+2、固定分片		rule1
+3、范围约定		auto-sharding-long
+4、求模法			mod-long
+5、日期列分区法		sharding-by-date
+6、通佩取模			sharding-by-pattern
+7、ASC2码求模通配	sharding-by-prefixpattern
+8、编程指定				sharding-by-substring
+9、字符串拆分hash解析		sharding-by-stringhash
+10、一致性hash				sharding-by-murmur
+
+
+四、mycat工作过程
+mycat收到SQL查询时
+1、先解析这个SQL查找涉及的表
+2、然后看此表的定义，如果有分片规则，则获取SQL里分片字段的值，并匹配分片函数，获得分片列表
+3、然后将SQL发往这些分片去执行
+4、最后收集和处理所有分片结果数据，并返回到客户端
+
+++++++++++++使用mycat++++++++++
+一、安装JDK
+～]#  rpm -qa |grep -i jdk
+~]#  yum -y install 
+二、解压安装mycat
+]# tar -xvf Mycat-server-1.6-RELEASE-20161028204710-linux.tar.gz 
+]# mv mycat  /usr/local/			//把解压后的mycat目录放到/usr/local/下，安装完成
+
+
+
+
+]# ls /usr/local/mycat/
+bin  		//mycat命令
+catlet   //扩展功能，此时为空
+conf		//配置文件
+lib 		//开发者写的文件，不能动，不可改
+logs		//mycat启动日志和运行日志
+logs/wrapper.log
+logs/mycat.log	
+version.txt
+
+++++++++++++++++配置文件说明+++++++++++
+
+mycat]# ls conf/				//存放在/usr/local/mycat/conf下
+rule.xml			//分片规则文件，不可改
+server.xml			//设置连接mycat的帐号信息，（连接用户）
+schema.xml		//用来做数据分片
+
+配置标签
+<user>……</user>		//定义连mycat用户信息（server.xml）
+
+<schema>……</schema>			//指定分片的表（schema.xml）
+<table  …… /> 							//代表一个表
+<datanode>……</datanode>		//指定数据节点
+<datahost>……</datahost>			//指定数据库地址及用户信息
+
+1、编辑server.xml文件
+有两个定义好的用户，root（123456），user（user）
+
+2、编辑schema.xml文件
+vim schema.xml
+删除56～77行以及39～42行
+删除注释行（<!--   -->）
+<schema>……</schema>			//指定分片的表（schema.xml）
+<table  ……   />				//代表一个表
+<datanode>……</datanode>		//指定数据节点
+<datahost>……</datahost>			//指定数据库地址及用户信息
+
+3、根据配置文件在数据库服务器上做对应操作
+	a、创建存储数据库
+	mysql> create database db1;
+	mysql> create database db2;
+	mysql> create database db3;
+	b、在所有数据库服务器上创建授权用户(3台服务器都要做)
+	mysql>grant all on *.*  to jinyaya@"%"  identified by '123456'; 
+	c、验证
+	]# mysql  -h192.168.4.55  -ujinyaya -p123456
+	]# mysql  -h192.168.4.54 -ujinyaya -p123456
+	]# mysql  -h192.168.4.53  -ujinyaya -p123456
+
+4、启动服务
+]# /usr/local/mycat/bin/mycat  start    //开启mycat服务
+
+5、客户端50测试
+~]# mysql -h192.168.4.57 -P8066 -uroot -p123456
+mysql> show databases;
+mysql> use TESTDB;
+mysql> show tables;
++------------------+
+| Tables in TESTDB |
++------------------+
+| company          |
+| customer         |
+| customer_addr    |
+| employee            |
+| goods                  |
+| hotnews          |
+| orders           |
+| order_items      |
+| travelrecord     |
++------------------+
+
+mysql> desc employee;
+ERROR 1146 (42S02): Table 'db3.employee' doesn't exist
+
+
+在57上：
+
+]# vim conf/schema.xml    //查找要创建的表的必须有的字段，得到
+]# vim conf/rule.xml 
+
+]# cat partition-hash-int.txt
+10000=0		dn1  mysql53  192.168.4.53 db1
+10010=1		dn2	mysql54	192.168.4.54 db2		//此时employee表只存在两个数据库上
+]# vim  partition-hash-int.txt
+10000=0		
+10010=1
+10020=2
+
+
+50上：
+mysql -h192.168.4.57 -P8066 -uroot -p123456
+
+mysql>create table  employee( 
+	ID  int primary key auto_increment,		//该字段通过算法得知，必须有
+	sharding_id  int,		//该字段通过算法（schema.xml）得知，必须有，类型（rule.xml ）
+	name char(20),
+	sex enum("boy","girl")
+);
+insert into employee(sharding_id,name,sex) values(10000,"asd","boy"),(10000,"tom","boy");
+insert into employee(sharding_id,name,sex)  values(10010,"yuyu","girl"),(10010,"harry","girl"),(10010,"jim","boy");
+insert into employee(sharding_id,name,sex) values(10020,"zhao","boy"),(10020,"john","boy");
+
+mysql>create table  goods(
+	ID int primary key auto_increment,
+	name char(20),
+	goods char(50)
+);
+
+
+===========Mycat添加新库，新表==============
+
+1、修改配置文件(57)
+]#vim  /usr/local/mycat/conf/server.xml
+<user name="root">
+                <property name="password">123456</property>
+                <property name="schemas">TESTDB,dbsdb</property>
+//dbsdb为新加的库
+
+]# vim schema.xml 			//为新库定义表
+<schema name="dbsdb" checkSQLschema="false" sqlMaxLimit="100">
+        <table name="stutent" primaryKey="ID" dataNode="dn1,dn2,dn3"
+                           rule="sharding-by-intfile" />
+        <table name="info" primaryKey="ID" type="global" dataNode="dn1,dn2,dn3" />
+        </schema>
+]# /usr/local/mycat/bin/mycat  stop
+]# /usr/local/mycat/bin/mycat  start
+
+2、客户端验证
+~]# mysql -h192.168.4.57 -P8066 -uroot -p123456
+mysql> show databases;
++----------+
+| DATABASE |
++----------+
+| TESTDB   |
+| dbsdb    |
++----------+
+
+mysql>create table  info(
+	ID int primary key auto_increment,
+	name   char(20),
+	phone  char(20) 
+	);
+
+
+==============MySQL性能优化============
+
+
+一、导致数据库处理速度慢的原因有哪些
+1、服务器硬件配置低：
+-----替换有问题的硬件（内存  硬盘 cpu  ）
+		查硬件使用率（free -m  iostat  uptime）
+
+2、服务程序的运行参数配置不合理：
+----服务程序的运行参数调整
+
+----对SQL查询进行优化
+
+
++++++++++++服务程序的运行参数调整+++++++++
+
+一、并发与连接控制
+
+1、查看所有变量
+show variables;
+show variables like '%binlog%';
+
+2、查看状态变量
+show  global variables;
+show  global   status  like '%innodb%';
+
+
+3、查看连接并发数
+show variables like  "%connect%";
+show variables like  "%connect%";
+
+4、查看默认最大连接数及更改
+show variables like  "max_connections"
+set global 	max_connections=200；		//临时更改
+
+永久更改：vim /etc/my.cnf
+max_connections=200
+
+5、设置并发连接数的理想值：
+曾经有过的子大连接数/并发连接数=0.85
+
+flush status; 		把当前变量的值清空，重新计算
+
+查看当前已使用的连接数：
+show  global   status  like  "Max_used_connections"
+
+connect_timeout  连接超时时间    默认是10s
+wait_timeout 	 连接建立后，等待命令执行时间（断开连接的时间），默认是28800s
+max_connections		允许最大并发连接数
+
+二、缓存参数的控制
+1、key_buffer_size		用于存放MyISAM引擎的关键索引信息，默认8M（在物理内存）
+set global  key_buffer_size=838860800
+
+2、sort_buffer_size	为每个要排序的线程分配词大小的缓存空间
+
+3、read_buffer_size		为顺序读取表记录保留的缓存大小
+
+4、thread_cache_size		允许保存在缓存中被重复使用的线程数量
+
+5、table_open_cache		为所有线程缓存的打开的表的数量
+查看已打开的表，打开多少表：
+show global status like 'open%tables';
+查看可缓存多少个打开的表：
+show variables like 'table_open_cache';
+
+
++++++++++++++SQL查询优化++++++++++++++++++++
+
+一、启用日志文件记录客户端连接服务器后执行的sql命令
+
+1、MySQL日志类型
+a、查询日志：		记录执行的所有SQL命令
+vim /etc/my.cnf
+[mysqld]
+general-log		启用查询日志
+general-log-file	=		指定查询日志名称
+
+打开后，在/var/lib/mysql/  会生成  主机名.log	  文件
+
+例子：
+vim /etc/my.cnf
+[mysqld]
+general-log
+]# systemctl restart mysqld
+cat  my50.log 			//记录所有的SQL命令
+
+
+b、慢查询日志：	记录超时时间显示查询结果的SQL命令
+slow-query-log					//启用慢查询
+slow-query-log-file=			//指定慢查询日志文件名
+long-query-time=						//超过多长时间才记录失败的sql命令（默认10s）
+log-queries-not-using-indexes				//记录未使用索引的查询
+
+例子：
+]# vim /etc/my.cnf
+[mysqld]
+slow-query-log
+long-query-time=8
+log-queries-not-using-indexes
+
+]# systemctl restart mysqld
+
+]# tail -f my50-slow.log 		//动态查看慢查询日志
+  
+]# mysqldumpslow  /var/lib/mysql/my50-slow.log 		//查看是谁操作有问题
+
+c、错误日志：记录启动/运行/停止过程中的错误消息
+vim /etc/my.cnf
+log-error[=name]
+
+2、查看缓存大小
+show variables like '%cache%';
+
+查看查询缓存大小
+show variables like 'query_cache%';
++-------------------------------------+---------+
+| Variable_name           				     | Value   |
++-------------------------------------+---------+
+| query_cache_limit       		     	| 1048576 |
+| query_cache_min_res_unit    	 	| 4096       |
+| query_cache_size         		     	| 1048576 |		查询缓存空间大小
+| query_cache_type             		 	| OFF        |		是否启用
+| query_cache_wlock_invalidate 	| OFF        |
++-------------------------------------+-----------+
+
+生产过程，不用数据库服务器本身提供数据缓存服务，会有一个内存存储服务器（memcached）
+
+3、查看数据库服务当前查询缓存的统计信息
+show global  status like "Qcache%";
+Qcache_hits    在查询缓存里查找到的数据的次数
+Qcache_inserts		在查询缓存里查找数据的次数
++--------------------------------+---------+
+| Variable_name        	 		  | Value   |
++---------------------------------+---------+
+| Qcache_free_blocks               | 1      	 |		
+| Qcache_free_memory            | 1031832 |
+| Qcache_hits           			       | 0      |	
+| Qcache_inserts      			       | 0 	     |
+| Qcache_lowmem_prunes       | 0       |
+| Qcache_not_cached      		   | 3       |
+| Qcache_queries_in_cache      | 0       |
+| Qcache_total_blocks   		   | 1       |
++-------------------------+---------+
+
++++++++++优化存储数据架构++++++++++
+查看是否有数据传输瓶颈，以及是否有单点故障
+网络带宽
+
+
+优化思路：
+升级硬件		CPU、内存、硬盘
+加大网络带宽		付费加大带宽
+调整mysql服务运行参数		并发连接数、连接朝是时间、重复使用的线程数……
+调整与查询相关参数		查询缓存、索引缓存……
+启用慢查询日志			slow-query-log
+网络架构不合理			调整网络架构
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

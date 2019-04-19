@@ -1,0 +1,234 @@
+#########################===day02=====#######################################
+
+				数据链路层
+
+
+ip  172.25.0.11
+mac 物理地址 硬件地址
+    48位2进制    12位16进制组成        52：54：00：f8：f9：d7
+单播
+    1对1 / 组播  1对多 / 广播  1对所有
+mtu 1500  最大传输单元
+交换机的工作原理
+    学习====广播===转发===更新
+查看mac的地址：  show mac-address-table
+
+
+VLAN
+作用【效果】：  广播控制   增加安全性   提高带宽利用   降低延迟
+vlan 的数量值最大为  4096  0～4095
+查看VLAN列表：  show vlan brief
+创建VLAN：(config)#   vlan 2 《交换机默认存在1接口》
+更改名字：config-name）#  name mingzi
+进入f0/3接口： interface  f0/3  [ range 多个接口===f0/5-8 ]
+把接口放入vlan 2 ： switchport  access vlan 2
+
+trunk   中继链路   承载1个vlan
+access  接入链路   承载多个链路
+
+VLAN标示的种类
+IEEE 802.1Q 《公有》
+添加标记 tag ，只有4字节
+ISL  《私有》 30字节
+
+Trunk配置
+show interfaces f0/7  switchport
+interface f0/7   //进入f0/7接口
+Switch(config-if)#switchport mode trunk   //将接口改为中继链路模式
+
+
+以太通道
+
+进入1，2接口： interface(in) range fastEthernet(f) 0/1-2
+将两个接口配置成以太通道，组号是1： channel-group 1 mode on
+测试：
+进去接口1： （config）# in f0/1
+关闭接口：(config-if) # shutdown
+打开接口： #  no shutdown
+查看以太通道汇总信息： #  show etherchannel summary
+
+
+
+#########################===day03=====############################
+
+
+                                 网络层
+
+ICMP协议
+ping命令使用ICMP协议 
+ -t  一直ping  
+ -l  字节数
+
+
+
+                     路由表：标示了当前设备能够到达的网段，以及方向
+
+查看路由表： show ip route
+路由的种类：
+   直连路由 C  产生条件是接口配置ip并且处于开启状态
+        《不同网段ip的连接，寻求子网掩码》
+配置路由的IP
+           进入： in g0/1
+           配置： ip address  <ip>  <子网掩码>
+           打开： no shutdown
+   静态路由 S 由管理员手工配置，并且设备两端都要相同的配置，否则有去无回，由
+
+                              目标<网段>   +   子网掩码    +  下一跳ip地址
+
+ 例：(config)#  ip route 192.168.3.0  255.255.255.0  192.168.2.2
+
+
+                            三层交换机，支持路由功能
+
+三层交换 = 二层交换 + 三层转发
+
+SVI  vlan之间的通讯
+
+  三层交换机虚拟接口（vlan）
+创建： vlan 2
+进入： in vlan 2
+配置ip：ip address ip 子网掩码
+打开：no shutdown
+进入接口 ： in f0/2
+把2接口加入vlan2 ： switchport access vlan 2
+开启路由功能： ip routing
+
+三层交换集配置中继链路，先封装802.1q <dot1q>协议，在配置
+进入交换机接口： in f0/24
+打封装： swit<tab>  trunk e<tab>  dot1q
+将接口改为中继链路模式： swit<tab> mode trunk
+
+
+   默认路由   特殊的静态路由，在路由表中可以到达任意地点，其他路由条目无法到达时，将使用默认路由，通常在企业网关设备对外出口使用
+  ip route  0.0.0.0.0.0.0.0  下一跳
+
+
+
+#########################===day04=====############################
+
+                                   传输层
+传输层
+定义端口号  65535个  0号保留 1～1023 是知名服务端口号，实现端与端的传输
+传输层使用的两个协议
+	TCP： 传输控制协议，数据传输安全可靠  效率低  要提前能够连接
+	UDP： 用户数据报协议，无连接  数据传输不可靠，但效率高
+
+tcp协议
+	syn  请求与对方建立连接
+	ack  确认信息
+	fin  与对方断开连接
+TCP的连接，三次握手
+	syn === syn，ack === ack
+四次断开
+	fin === ack === fin === ack
+
+udp协议
+	NTP  网络时间协议  端口号 ：123
+	
+
+
+
+permit  允许
+deny    拒绝
+子网掩码  255.255.255.0
+反掩码    0.0.0.255     匹配这个网段的 < 0为匹配，1为不匹配 >  
+	  0.0.0.0     < 严格按照ip来匹配> 
+
+查看ACL访问控制列表：  show access-list
+在接口运用ACL：先进入接口
+    in  g0/1
+在用列表1
+    ip access-group  1  in  <标准访问控制列表>
+
+添加ACL格式： access-list 1 permit/dent  源IP  反掩码
+
+扩展ACL过滤数据
+	access-list  100 deny tcp host 源IP host 目标IP eq 端口号
+	access-list  100 permit ip any  any
+	使用列表100       ip access-group  100  in
+
+NAT  < 把私有地址转换为公有地址 >
+优点： 节约公有合法IP地址   处理地址重叠    安全性
+缺点： 延迟增大  配置和维护的复杂性
+
+私有IP分类： 
+	A类：  10.0.0.0 ～ 10.255.255.255
+	B类：  172.16.0.0 ～ 172.31.255.255
+	C类：  192.168.0.0 ～ 192.168.255.255
+
+静态  一般用于服务器发布服务到公网，一台服务器使用一个公网ip    
+        端口映射  只发布某个服务到公网使用
+PAT  一般用于访问外网是使用，比如员工办公室
+
+
+私有IP转化为公有ip： ip nat inside source static  私有地址  公有地址
+进入接口：  in  g0/0
+设置内网区域： in nat inside
+	in  g0/1
+设置外网区域： in nat outside
+   
+
+overload  多路复用   允许所有人同一时间上网
+
+
+#########################===day05=====############################
+
+STP 生成树算法
+   作用：   逻辑上断开环路，防止广播风暴的产生   当线路故障是，阻塞接口哦被激活，恢复通信，备份线路的作用
+ 
+根网桥
+   取值范围：0 ～ 65535
+   缺省值： 32768
+   交换机之间选择BID值最小的交换机作为网络中的根网桥
+查看生成树配置：  show  spanning-tree  vlan 1
+	root id : 主根      bridge id ： 优先级
+	FWD： 转发状态     BLK： 阻塞状态
+   
+启动生成树：  spanning-tree  vlan 1/vlan-list
+指定设置根网桥：  spanning-tree  vlan 1  priority  123
+	     root secondary  次根        root primayy  主根
+查看交换机的MAC地址：  show  version
+
+PVST+  每vlan生成树，可以实现负载均衡
+
+HSRP
+热备份路由选择协议
+    ——HSRP
+    ——Cisco 私有协议
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

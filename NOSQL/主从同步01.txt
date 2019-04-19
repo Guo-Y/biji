@@ -1,0 +1,460 @@
+
+主从同步原理：
+Master，记录数据更改操作（客户端访问哪一台服务器，哪一台服务器为主服务器）
+-启用binlog日志
+-设置binlog日志格式
+-设置server_id
+
+Slave ,运行2个线程，只要配好主从同步，会在从上自动开启
+-Slave_IO：复制Mastes主机 binlog日志文件里的SQL到本机的realy-log(中继日志文件)文件里。
+-Slave_SQL ：执行本机relay-log文件里的SQL语句。
+
+
+=========构建主从同步基本思路============
+一、确保数据相同
+	-从库必须要有主库上的数据，从库确保要与主库的数据一致。备份主库数据，到从库上恢复数据
+二、配置主服务器（192.168.4.51）
+	-启用binlog日志、授权用户、查看当前正在使用的日志
+三、配置从服务器（192.168.4.52）
+	-设置server_id，指定主库信息。
+四、测试配置
+	-客户端连接主库写入数据，在从库上也能查询到。
+
+
+++++++配置主服务器++++++
+192.168.4.51：
+1、启用binlog日志
+~]# vim /etc/my.cnf    //修改主配置文件，用来启用binlog日志
+	[mysqld]
+	log-bin=master51		//日志名
+	server_id=51
+~]#systemctl restart mysqld   //重启mysqld  
+~]#mysql	 -uroot	 -p123456  	//登陆mysql
+mysql> show master status;			//查看当前使用的binlog日志
+
+2、授权用户
+mysql> set global validate_password_policy=0;   //设置密码策略
+mysql> set global validate_password_length=6;   //更改密码长度
+
+mysql> grant   replication   slave   on   *.*  to   repluser@"%" identified   by   "123456";   		//给从库（slave）设置一个授权用户（repluser）
+
+
+++++++配置从服务器++++++
+192.168.4.52：
+1、指定server_id    
+]# vim /etc/my.cnf		//修改配置文件，指定server_id
+	[mysqld]
+	server_id=52
+]# systemctl restart mysqld 	//重启mysqld  
+~]#mysql	 -uroot	 -p123456  	//登陆mysql
+	
+
+2、指定主库信息
+
+mysql> show slave status\G;			//显示当前是否为从库
+
+在准备做从库的机器上指定主库信息：
+mysql> change master to
+    ->master_host="192.168.4.51",		//指定主服务器的ip
+    -> master_user="repluser",			//主库授权用户名
+    -> master_password="123456",	//用户授权密码
+    -> master_log_file="master51.000001",		//日志文件
+    -> master_log_pos=441;				//日志偏移量
+
+mysql>start slave;				//启动slave
+
+mysql>show slave status\G;		//显示当前是否为从库及其信息
+*************************** 1. row ***************************
+               Slave_IO_State: 
+                  Master_Host: 192.168.4.51
+                  Master_User: repluser
+                  Master_Port: 3306
+                Connect_Retry: 60
+              Master_Log_File: master51.000001
+          Read_Master_Log_Pos: 441
+               Relay_Log_File: my52-relay-bin.000001
+                Relay_Log_Pos: 4
+        Relay_Master_Log_File: master51.000001
+             Slave_IO_Running: No		//Slave_IO 未开启
+            Slave_SQL_Running: No 	//Slave_SQL  未开启
+
+mysql> start slave;		//启动slave进程
+
+mysql>show slave status\G;			//Slave_IO 已经开启，Slave_SQL  已经开启
+
+
+
+++++++测试主从同步配置++++++
+1、主库授权访问用户（给客户端50用）
+主库51：
+~]#mysql	 -uroot	 -p123456    //登陆mysql
+mysql> create database db5;	//创建一个db5库
+mysql> grant all on db5.* to yaya@"%" identified by "123456";		//给客户端授权
+
+
+2、客户端50连接主库51存储数据
+my50 ~]# mysql -h192.168.4.51 -uyaya -p123456		//客户端登陆主库51
+mysql> use db5; 
+mysql> create table a(id int);		//建表
+mysql> insert into a  values(1),(2);		//插入数据
+
+3、从库52在本机用管理员身份登陆，查看是否有主库数据
+my52~]# mysql  -uroot  -p123456	
+mysql> show databases;    //查看库，有db5库
+mysql> use db5;			//进入db5库
+mysql> show tables;			//查看表，有客户端50建的表
+
++++++++++排错+++++++++
+show slave status\G;		//查看是谁出错
+
+1、Slave_IO_Running: 		不是YES状态   ---->查看  Last_IO_Error:  --->  可以到主库查看授权信息，与从库是否相同
+查看授权用户：select  user,host  from mysql.user;
+2、Slave_SQL_Running:      不是YES状态  --->查看  Last_SQL_Error:
+--->  主从数据不相同  
+--->  stop slave;            
+--->  grant   replication   slave   on   *.*  to   repluser@"%" identified   by   "123456";   //让从库与主库数据同步
+--->  start slave;
+--->  show slave status\G;
+
+3、主从server-uuid相同：
+vim  /var/lib/mysql/auto.cnf
+[auto]
+server-uuid=c688d280-4789-11e9-9a22-525400f078fa
+随便更改一个字符，长度不变
+
+4、指定信息时的密码与授权密码不同
+stop  slave;
+change master master_password="123456";
+start slave;
+
+5、指定信息时从库的偏移量与主库不同
+stop  slave；
+change master  master_log_file="master51.000002"；
+start slave;
+
+
++++++++++从库还原为独立的数据库服务器++++++++++
+
+一台数据库配置为从库时，会产生相关文件
+]# ls /var/lib/mysql
+master.info  			主库信息文件
+relay-log.info		中继日志信息    记录中继日志信息文件
+my52-relay-bin.000001			中继日志  （主机名-relay-bin.xxxxxx）只保留最近的两个文件
+my52-relay-bin.index		索引文件（主机名-relay-bin.index） 记录本机当前已有的中继日志文件
+
+还原为独立的数据库服务器：
+一个都不能留，必须全部删除
+]# rm -rf my52-relay-*  	  	//删除索引文件及中继日志文件
+]# rm -rf master.info 		//删除主库信息文件
+# rm -rf relay-log.info 		//删除记录中继日志的信息文件
+]# systemctl  restart mysqld		//重启mysqld
+
+
+
+==============主从同步模式================
+
++++++++++++主从同步结构+++++++++++
+一、主从同步结构分类
+1、单项复制：一主  ---> 一从
+2、一主多从：从<----主---->从
+								从
+3、链式复制：主--->从--->从（做为从库的备份(从库)）
+4、互为主从：主<---->主
+
+
+++++++++++一主多从++++++++
+
+53配置两台从库，从库分别为54   55
+
+一、配置主库53
+1、启用binlog日志
+~]# vim /etc/my.cnf    //修改主配置文件，用来启用binlog日志
+	[mysqld]
+	log-bin=master53
+	server_id=53
+~]#systemctl restart mysqld   //重启mysqld  
+~]#mysql	 -uroot	 -p123456  	//登陆mysql
+2、用户授权
+mysql> set global validate_password_policy=0;   //设置密码策略
+mysql> set global validate_password_length=6;   //更改密码长度
+mysql> grant   replication   slave   on   *.*  to   repluser@"%" identified   by   "123456";   		//给从库（slave）设置一个授权用户（repluser）
+3、查看binlog日志
+mysql> show master status;			//查看当前使用的binlog日志
+
+二、配置从库54
+1、指定server_id
+]# vim /etc/my.cnf		//修改配置文件，指定server_id
+	[mysqld]
+	server_id=54
+]# systemctl restart mysqld 	//重启mysqld  
+~]#mysql	 -uroot	 -p123456  	//登陆mysql
+2、指定主库信息
+mysql> show slave status\G;			//显示当前是否为从库
+在准备做从库的机器上指定主库信息：
+mysql> change master to
+    ->master_host="192.168.4.53",		//指定主服务器的ip
+    -> master_user="repluser",			//主库授权用户名
+    -> master_password="123456",	//用户授权密码
+    -> master_log_file="master53.000001",		//日志文件
+    -> master_log_pos=154;				//日志偏移量
+3、启动slave
+mysql>start slave;				//启动slave
+4、查看状态信息
+mysql>show slave status\G;		//显示当前是否为从库及其信息
+
+
+三、配置从库55
+1、指定server_id
+]# vim /etc/my.cnf		//修改配置文件，指定server_id
+	[mysqld]
+	server_id=55
+]# systemctl restart mysqld 	//重启mysqld  
+~]#mysql	 -uroot	 -p123456  	//登陆mysql
+2、指定主库信息
+mysql> show slave status\G;			//显示当前是否为从库
+在准备做从库的机器上指定主库信息：
+mysql> change master to
+    ->master_host="192.168.4.53",		//指定主服务器的ip
+    -> master_user="repluser",			//主库授权用户名
+    -> master_password="123456",	//用户授权密码
+    -> master_log_file="master53.000001",		//日志文件
+    -> master_log_pos=154;				//日志偏移量
+3、启动slave
+mysql>start slave;				//启动slave
+4、查看状态信息
+mysql>show slave status\G;		//显示当前是否为从库及其信息
+
+四、客户端检测56
+1、主库授权访问用户（给客户端56用）
+主库53：
+~]#mysql	 -uroot	 -p123456    //登陆mysql
+mysql> create database db6;	//创建一个db5库
+mysql> grant all on db6.* to yaya@"%" identified by "123456";		//给客户端授权
+2、客户端56连接主库53存储数据
+my50 ~]# mysql -h192.168.4.53 -uyaya -p123456		//客户端登陆主库53
+mysql> use db6; 
+mysql> create table a(id int);		//建表
+mysql> insert into a  values(1),(2);		//插入数据
+
+3、从库54、55在本机用管理员身份登陆，查看是否有主库数据
+my52~]# mysql  -uroot  -p123456	
+mysql> show databases;    //查看库，有db6库
+mysql> use db6;			//进入db6库
+mysql> show tables;			//查看表，有客户端56建的表
+
++++++++++++++++++主从从同步+++++++++++++
+51配置一台从库，从库为52 ，52同时做主库，从库为53
+
+一、配置主库51
+1、启用binlog日志
+~]# vim /etc/my.cnf    //修改主配置文件，用来启用binlog日志
+	[mysqld]
+	log-bin=master51
+	server_id=51
+~]#systemctl restart mysqld   //重启mysqld  
+~]#mysql	 -uroot	 -p123456  	//登陆mysql
+2、用户授权
+mysql> set global validate_password_policy=0;   //设置密码策略
+mysql> set global validate_password_length=6;   //更改密码长度
+mysql> grant   replication   slave   on   *.*  to   repluser@"%" identified   by   "123456";   		//给从库（slave）设置一个授权用户（repluser）
+3、查看binlog日志
+mysql> show master status;			//查看当前使用的binlog日志
+
+二、配置主从库52
+1、启用binlog日志,及指定server_id
+]#vim /etc/my.cnf
+	[mysqld]
+	#skip_grant_tables
+	validate_password_policy=0
+	validate_password_length=6
+	server_id=52
+	log-bin=master52		 //启用binlog日志，并指定文件名前缀
+	log_slave_updates				 //允许级联复制
+]# systemctl restart mysqld 	//重启mysqld  
+~]#mysql	 -uroot	 -p123456  	//登陆mysql
+2、指定主库信息
+mysql> show slave status\G;			//显示当前是否为从库
+在准备做从库的机器上指定主库信息：
+mysql> change master to
+    ->master_host="192.168.4.51",		//指定主服务器的ip
+    -> master_user="repluser",			//主库授权用户名
+    -> master_password="123456",	//用户授权密码
+    -> master_log_file="master51.000001",		//日志文件
+    -> master_log_pos=154;				//日志偏移量
+3、启动slave
+mysql>start slave;				//启动slave
+4、查看状态信息
+mysql>show slave status\G;		//显示当前是否为从库及其信息
+
+三、配置从库53
+1、指定server_id
+]# vim /etc/my.cnf		//修改配置文件，指定server_id
+	[mysqld]
+	server_id=53
+]# systemctl restart mysqld 	//重启mysqld  
+~]#mysql	 -uroot	 -p123456  	//登陆mysql
+2、指定主库信息
+mysql> show slave status\G;			//显示当前是否为从库
+在准备做从库的机器上指定主库信息：
+mysql> change master to
+    ->master_host="192.168.4.52",		//指定主服务器的ip
+    -> master_user="repluser",			//主库授权用户名
+    -> master_password="123456",	//用户授权密码
+    -> master_log_file="master52.000001",		//日志文件
+    -> master_log_pos=154;				//日志偏移量
+3、启动slave
+mysql>start slave;				//启动slave
+4、查看状态信息
+mysql>show slave status\G;		//显示当前是否为从库及其信息
+
+四、客户端检测56
+1、主库授权访问用户（给客户端56用）
+主库51：
+~]#mysql	 -uroot	 -p123456    //登陆mysql
+mysql> create database db6;	//创建一个db5库
+mysql> grant all on db6.* to yaya@"%" identified by "123456";		//给客户端授权
+2、客户端56连接主库53存储数据
+my50 ~]# mysql -h192.168.4.51 -uyaya -p123456		//客户端登陆主库53
+mysql> use db6; 
+mysql> create table a(id int);		//建表
+mysql> insert into a  values(1),(2);		//插入数据
+
+3、在52、53在本机用管理员身份登陆，查看是否有主库数据
+my52~]# mysql  -uroot  -p123456	
+mysql> show databases;    //查看库，有db6库
+mysql> use db6;			//进入db6库
+mysql> show tables;			//查看表，有客户端56建的表
+
+
+===============  常用配置选项=================
+都添加在主配置文件里（/etc/my.cnf）
+
+一、主库配置选项（Master）
+		写在主配置文件/etc/my.cnf里,对所有的从库有效
+binlog_do_db=库名    设置Master对那些库记日志，只允许从库同步的库
+binlog_ignore_db=库名      设置Master对哪些库不记日志，哪些库不同步
+show  master status；可以看见哪些库被同步，或不同步
+
+在主库51上添加：
+]#vim /etc/my.cnf
+	[mysqld]
+	binlog_do_db=db5
+
+]#systemctl restart mysqld   
+以上表示在主库51上，只允许从库同步db5库的数据。
+]# mysql -u root -p123456
+mysql> show master status;			//看Binlog_Ignore_DB 有值
+
+
+
+二、从库配置选项（Slave）
+		写在主配置文件/etc/my.cnf里,只对从库本机有效
+log_slave_updates		记录从库更新，允许链式复制（A-B-C)
+relay_log=中继日志文件名		指定中继日志文件名
+replicate_do_db=库名			只允许同步指定的库，其他库将被忽略，此选项可以设置多条（省略时同步数有的库）
+replicate_ignore_db=库名		不同步哪些库，其他库将被忽略，ignore_db和do_db二者选一种即可
+
+在从库53上添加：
+]#vim /etc/my.cnf
+	[mysqld]
+	replicate_do_db=db5
+
+]#systemctl restart mysqld   
+以上表示在从库53上，只同步db5库的数据。
+]# mysql -u root -p123456
+mysql> show slave status\G;			// 看Replicate_Do_DB:  有值
+
+
+
+==============主从同步复制模式================
+
+一、主从同步复制模式
+1、异步模式：
+		主库执行完一次事务后，立即将结果返给客户端，并不关心从库是否同步数据。速度快，但是主库挂了，从库可能没有备份数据
+2、全同步模式：
+		也叫组同步模式，当主库执行完一次事务，并且所有从库都执行该事务后才返回给客户端。速度慢，但是数据备份完全。
+3、半同步模式：
+		介于异步复制模式和全同步复制模式之间；
+		主库执行完一次事务后，等待至少一个从库接收到并写到relay log中才返回给客户端。
+
+二、配置主从同步  半同步复制模式
+步骤1、主库启用半同步复制模式
+1、查看当前数据库服务器是否允许动态加载模块
+mysql> show  variables  like  'have_dynamic_loading';			//看have_dynamic_loading 值是否为yes，是yes开启，不是，未开启
+
+2、加载模块
+mysql> select  plugin_name, plugin_status  from  information_schema.plugins where  plugin_name  like  '%semi%';			//查看系统库下的表，模块是否安装成功
+mysql> install  plugin rpl_semi_sync_master   soname   'semisync_master.so';		//加载模块
+
+3、启用半同步复制模式
+mysql>show  variables  like  "rpl_semi_sync_%_enabled";		//查看是否启用 ，此时为off
+
+在主库51：master
+mysql> set  global rpl_semi_sync_master_enabled = 1;		//临时启用半同步复制
+
+4、修改主配置文件，永久生效
+在主库51：
+[root@mysql51 ~]# vim /etc/my.cnf
+[mysqld]
+plugin-load=rpl_semi_sync_master=semisync_master.so
+rpl_semi_sync_master_enabled=1
+
+步骤2、从库启用半同步复制模式
+1、查看当前数据库服务器是否允许动态加载模块
+mysql> show  variables  like  'have_dynamic_loading';			//看have_dynamic_loading 值是否为yes，是yes开启，不是，未开启
+
+2、加载模块
+mysql> select  plugin_name, plugin_status  from  information_schema.plugins where  plugin_name  like  '%semi%';			//查看系统库下的表，模块是否安装成功
+mysql> install  plugin rpl_semi_sync_slave   soname   'semisync_slave.so';		//加载模块
+
+
+3、启用半同步复制模式
+mysql>show  variables  like  "rpl_semi_sync_%_enabled"		//查看是否启用 ，此时为off
+mysql> set  global rpl_semi_sync_slave_enabled = 1;		//临时启用半同步复制
+
+4、修改主配置文件，永久生效
+[root@mysql52 ~]# vim /etc/my.cnf
+[mysqld]
+plugin-load=rpl_semi_sync_slave=semisync_slave.so
+rpl_semi_sync_slave_enabled=1
+
+
+++++++服务器既做主库又做从库++++++++
+
+服务器既做主库又做从库，两种模块都要启用
+mysql> install  plugin rpl_semi_sync_master   soname   'semisync_master.so';		//加载主库模块
+mysql> install  plugin rpl_semi_sync_slave   soname   'semisync_slave.so';		//加载从库模块
+mysql> set  global rpl_semi_sync_master_enabled = 1;		//临时启用主库半同步复制
+mysql> set  global rpl_semi_sync_slave_enabled = 1;		//临时启用从库半同步复制
+mysql>show  variables  like  "rpl_semi_sync_%_enabled"		//查看是否启用 
+
+永久生效：
+]# vim /etc/my.cnf
+[mysqld]
+plugin-load="rpl_semi_sync_slave=semisync_slave.so;rpl_semi_sync_master=semisync_master.so"
+rpl-semi-sync-master-enabled = 1
+rpl_semi_sync_slave_enabled=1
+
+
+删除模块：
+uninstall  	 plugin rpl_semi_sync_master;
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
